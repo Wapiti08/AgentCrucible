@@ -7,4 +7,21 @@ name = "agentic-security-lab"
 version = "0.1.0"
 description = "A lab for safe agentic security testing."
 requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2,<3",
+]
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "apps", "apps.*",
+    "attack_runner", "attack_runner.*",
+    "binary_analysis", "binary_analysis.*",
+    "detectors", "detectors.*",
+    "mcp_servers", "mcp_servers.*",
+    "reports", "reports.*",
+    "sandbox", "sandbox.*",
+]
+
+[tool.uv]
+python-preference = "only-managed"

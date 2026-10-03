@@ -24,7 +24,11 @@ class PlatformErrorCode(str, Enum):
 
 # runtimeerror is a built-in exception
 class PlatformInitializationError(RuntimeError):
-    """Configuration or platform capabilities prevent safe startup."""
+    """The platform cannot start safely."""
+
+
+class PlatformRequestError(Exception):
+    """An expected request failure, translated by the service."""
 
     def __init__(
         self,
@@ -99,6 +103,10 @@ class FilePlatform(ABC):
         
         self._closed = True
         self._close_resources()
+
+    def _ensure_open(self) -> None:
+        if self._closed:
+            raise RuntimeError("File platform is closed.")
 
     @abstractmethod
     def _close_resources(self) -> None:
