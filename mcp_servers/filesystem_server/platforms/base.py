@@ -20,6 +20,8 @@ class PlatformErrorCode(str, Enum):
     PERMISSION_DENIED = "permission_denied"
     SYMLINK_LOOP = "symlink_loop"
     IO_ERROR = "io_error"
+    AUTHORIZATION_STATE_CHANGED = "authorization_state_changed"
+    AUTHORIZATION_STATE_UNVERIFIABLE = "authorization_state_unverifiable"
 
 
 # runtimeerror is a built-in exception
