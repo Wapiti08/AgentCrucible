@@ -1,138 +1,136 @@
-# Agentic Security Lab
+# AgentCrucible
 
-Agentic Security Lab is a defensive security workbench for running controlled
-attack simulations against AI agents and MCP tools. It is designed to test
-preventive controls, runtime detection, event correlation, risk scoring, and
-report generation without targeting real systems or data.
+A proving ground for AI agents and their tool boundaries.
 
-The project is currently in its initial design and scaffolding phase. The first
-milestone focuses on filesystem path traversal. Shell execution and HTTP/SSRF
-scenarios will be added only after the filesystem workflow is stable.
+AgentCrucible is a defensive security workbench for controlled attack simulations
+against AI agents and MCP tools. Its goal is to connect authorization decisions,
+runtime evidence, detection, and test verdicts in one reproducible experiment,
+using synthetic data rather than real targets.
 
-## Safety and Intended Use
+## Current Status
 
-This project is intended only for authorized, isolated, and non-destructive
-security testing.
+The project is under active development, starting with filesystem access.
 
-- Use synthetic files, credentials, services, and exfiltration markers only.
-- Keep test execution inside a dedicated per-run workspace.
-- Do not access real credentials, user directories, public targets, or unrelated
-  repository paths.
-- Deny outbound internet and host-network access by default.
-- Do not use destructive commands, persistence, malware, denial of service, or
-  uncontrolled recursive operations.
+- **Available:** a synthetic-event CLI with single-path, batch, and JSON input;
+  a reusable detector engine; and the `FS_PATH_OUTSIDE_SCOPE` rule.
+- **In progress:** the filesystem service and Linux backend, including directory
+  handles, `openat2` bindings, and authorization-root checks. The safe file-read
+  workflow is not complete.
+- **Planned:** agent-to-MCP orchestration, attack-case verdicts, correlation,
+  scoring, reports, SandScope integration, and shell/HTTP scenarios.
 
-See [SECURITY.md](SECURITY.md), [DISCLAIMER.md](DISCLAIMER.md), and the
-[threat model](docs/threat-model.md) before adding or running attack scenarios.
+The current CLI evaluates supplied path evidence. It does **not** run an agent,
+open target files, resolve symlinks, or prove that filesystem enforcement works.
+This is an experimental lab, not a production security boundary.
 
-## How a Test Run Works
+## Quick Start
 
-1. The attack runner loads an attack case containing controlled input,
-   authorization scope, and expected results.
-2. The vulnerable agent interprets the input and may propose a tool call.
-3. The policy layer evaluates the tool and its normalized arguments.
-4. An allowed request is executed by the relevant MCP server; a blocked request
-   must not reach execution.
-5. Components emit immutable events describing decisions and observed effects.
-6. Detectors identify security-relevant behavior, and the correlator connects
-   related events into an attack chain.
-7. Scoring assigns an explainable risk level.
-8. The runner compares actual behavior with the attack case expectations.
-9. Reporters produce machine-readable JSON and human-readable HTML results.
+With [uv](https://docs.astral.sh/uv/) installed:
 
-Attack outcome and test verdict are intentionally separate. A blocked attack can
-mean the test passed, while a successful attack against an intentionally
-vulnerable configuration can also mean the test passed when the expected impact
-was reproduced and detected.
+```sh
+git clone https://github.com/Wapiti08/AgentCrucible.git
+cd AgentCrucible
+uv sync --locked
+uv run --locked python -m attack_runner.runner --input-file examples/file-events.json
+```
 
-## Project Structure
+The example contains two synthetic events: a read within `/lab/public` produces
+`not_detected`, and a read outside that scope produces `detected`.
+
+You can also supply multiple paths sharing an authorization scope:
+
+```sh
+uv run --locked python -m attack_runner.runner \
+  --path /lab/public/readme.txt /lab/secret/token.txt \
+  --allowed-root /lab/public
+```
+
+The CLI can run on Linux or macOS; the filesystem backend is Linux-specific.
+Linux backend integration tests should run in an isolated Linux container.
+
+Exit code `0` means all events were evaluated, **including detected events**.
+Code `1` indicates incomplete evaluation or detection errors; code `2` indicates
+an input error. These codes are not attack outcomes or test verdicts.
+
+See [Runner inputs](docs/runner-inputs.md) for the JSON contract and batch behavior.
+
+## Intended Architecture
+
+The target workflow is:
+
+1. The runner loads a controlled attack case and its expected outcomes.
+2. The agent proposes a tool call.
+3. Policy evaluates the request against trusted authorization configuration.
+4. The MCP tool executes only an allowed operation, within sandbox constraints.
+5. Detectors evaluate evidence; correlation and scoring add context.
+6. The runner compares observations with expectations and produces a report.
+
+These are design responsibilities, not a claim that the full flow is implemented.
+The agent's proposed arguments are untrusted. Detectors identify behavior but do
+not grant permission; enforcement belongs at the tool boundary. A detector
+finding alone is not evidence that protected content was actually read.
+
+Run status, policy outcome, execution outcome, detection outcome, actual impact,
+and test verdict remain separate. A blocked attack can be a passing test. An
+intentionally vulnerable scenario can also pass when its expected behavior is
+reproduced and verified.
+
+## Project Layout
+
+The table describes module responsibilities; see Current Status for availability.
 
 | Path | Responsibility |
 | --- | --- |
-| `apps/vulnerable_agent/` | Converts controlled inputs into potentially unsafe tool requests for testing. |
-| `mcp_servers/filesystem_server/` | Exposes controlled filesystem operations to the test agent. |
-| `mcp_servers/shell_server/` | Exposes constrained command-execution operations for later scenarios. |
-| `mcp_servers/web_server/` | Exposes constrained HTTP operations for later SSRF scenarios. |
-| `attack_runner/` | Loads attack cases, orchestrates components, collects results, and evaluates test verdicts. |
-| `attack_runner/attacks/` | Stores declarative attack cases and their expected outcomes. |
-| `attack_runner/payloads/` | Stores safe, non-destructive test inputs and fixtures. |
-| `detectors/rules/` | Contains focused detection rules such as `FS_PATH_TRAVERSAL`. |
-| `detectors/correlator.py` | Connects related events and findings into complete attack chains. |
-| `detectors/scoring.py` | Calculates explainable risk scores from findings and confirmed impact. |
-| `sandbox/sandscope_adapter/` | Integrates the existing Rust SandScope enforcement and telemetry layer. |
-| `binary_analysis/` | Extracts binary metadata and applies binary-specific risk rules. |
-| `reports/` | Renders canonical run results as JSON and HTML reports. |
-| `tests/attacks/` | Verifies attack-case definitions and expected outcomes. |
-| `tests/detectors/` | Unit-tests individual detection rules and scoring behavior. |
-| `tests/integration/` | Verifies complete runner-to-report attack flows. |
-| `docs/` | Documents architecture, trust boundaries, threats, and the attack catalogue. |
-| `examples/` | Provides safe example configurations and completed test runs. |
+| `attack_runner/` | Input loading and detection CLI; future experiment orchestration and verdicts. |
+| `apps/vulnerable_agent/` | Controlled test agent that proposes tool calls. |
+| `mcp_servers/filesystem_server/` | Filesystem request/result models, service layer, and platform backends. |
+| `mcp_servers/shell_server/`, `mcp_servers/web_server/` | Future command-execution and HTTP/SSRF scenarios. |
+| `detectors/engine.py`, `detectors/rules/` | Common event/result contracts, rule dispatch, and focused detection rules. |
+| `detectors/correlator.py`, `detectors/scoring.py` | Future evidence correlation and explainable risk scoring. |
+| `sandbox/sandscope_adapter/` | Planned integration with the Rust SandScope sandbox. |
+| `binary_analysis/` | Planned binary metadata extraction and risk rules. |
+| `reports/` | Planned JSON and HTML reports. |
+| `tests/`, `examples/` | Tests and safe example inputs. |
+| `docs/` | Architecture, threat model, and attack catalogue. |
 
-## Core Design Boundaries
+## Next Milestone: A Complete Filesystem Experiment
 
-- The **runner** orchestrates the experiment; it does not implement detection or
-  access files directly.
-- The **agent** proposes tool calls; its decisions are untrusted.
-- The **policy layer** decides whether a normalized operation is authorized.
-- The **MCP server** executes only operations that passed authorization.
-- The **sandbox** limits real effects even if an earlier control fails.
-- A **detector** identifies and explains suspicious behavior; it does not enforce
-  policy.
-- The **scorer** estimates risk; it does not decide whether a test passed.
-- The **runner** produces the final test verdict by comparing actual behavior
-  with the attack case expectations.
+Complete the safe-read backend and service, then connect them to the runner.
+The first end-to-end scenarios will cover:
 
-## First Milestone: Filesystem Path Traversal
+- a normal read inside an authorized fixture directory;
+- a direct request outside the authorized scope;
+- a `..` traversal attempt;
+- a symbolic-link escape attempt.
 
-The initial vertical slice will cover four safe cases:
+For a “path escape must be blocked” case, a passing verdict requires all expected
+conditions: a blocked policy decision, no tool execution, the expected finding,
+no protected synthetic content returned, and a complete event chain without
+infrastructure errors.
 
-1. A normal read inside an authorized fixture directory.
-2. A direct request for a synthetic file outside the authorized directory.
-3. A `..` path traversal attempt.
-4. A symbolic-link escape attempt.
+Shell execution and HTTP/SSRF scenarios follow the filesystem workflow.
+Langfuse is a planned optional observability adapter, not a dependency for
+security evidence or core tests.
 
-The first detection rule, `FS_PATH_TRAVERSAL`, will compare the normalized target
-path with the authorized filesystem root. The original path, policy decision,
-execution result, and synthetic-data markers provide evidence and severity
-context, but no single one of them is sufficient by itself.
+## Safety and Intended Use
 
-A blocked traversal case passes only when all expected conditions hold:
+Use this project only for authorized, isolated, non-destructive testing.
+For execution scenarios:
 
-- the policy decision is `blocked`;
-- no tool execution starts;
-- the expected detector rule is emitted;
-- no synthetic protected content is returned;
-- the event chain completes without infrastructure errors.
+- Use synthetic files, credentials, services, and exfiltration markers.
+- Keep execution inside a dedicated test workspace.
+- Do not target real credentials, user directories, public systems, or unrelated files.
+- Deny outbound internet and host-network access by default.
+- Avoid destructive commands, persistence, malware, and denial of service.
 
-## Event and Result Model
-
-Every run uses stable run, trace, event, and parent identifiers so the complete
-causal chain can be reconstructed. Original and normalized tool arguments remain
-separate, and sensitive evidence is bounded and redacted at its source.
-
-Run results keep these dimensions independent:
-
-- run status;
-- policy outcome;
-- execution outcome;
-- detection outcome;
-- actual impact;
-- test verdict.
-
-The detailed event contract and completeness invariants are defined in
-[docs/architecture.md](docs/architecture.md).
-
-## Optional Observability
-
-Langfuse integration is planned as an optional adapter for visualizing model
-calls, tool activity, traces, and evaluation scores. The lab's unified event
-model remains the canonical source of security evidence, and all core tests must
-run without Langfuse or any other external observability service.
+These are operating requirements, not guarantees currently enforced by every
+component. Read the [security policy](SECURITY.md), [disclaimer](DISCLAIMER.md),
+and [threat model](docs/threat-model.md) before running attack scenarios.
 
 ## Documentation
 
-- [Architecture and unified event model](docs/architecture.md)
-- [Threat model and safety constraints](docs/threat-model.md)
+- [Architecture and event model](docs/architecture.md)
+- [Runner inputs](docs/runner-inputs.md)
+- [Threat model](docs/threat-model.md)
 - [Attack catalogue](docs/attack-catalogue.md)
-- [Security policy](SECURITY.md)
-- [Disclaimer](DISCLAIMER.md)
+- [License](LICENSE)
