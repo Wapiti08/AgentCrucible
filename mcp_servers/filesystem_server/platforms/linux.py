@@ -48,15 +48,6 @@ class LinuxFilePlatform(FilePlatform):
 
             raise
 
-    @contextmanager
-    def _open_regular_target(
-        self,
-        relative_path: str,
-    ) -> Iterator[int]:
-        """Yield a reference to a regular file, then close it."""
-        
-
-
         
     @contextmanager
     def open_read(self, 
@@ -88,9 +79,15 @@ class LinuxFilePlatform(FilePlatform):
 
         self._check_authorized_roots()
 
-        raise NotImplementedError("Safe opening is not implemented yet.")
+        with self._open_regular_target(relative_path) as target_fd:
+            resolved_path = self._authorize_target(target_fd)
     
-        yield
+            with self._open_readable_target(
+                target_fd,
+                resolved_path,
+            ) as opened_file:
+                
+                yield opened_file
 
 
     def _close_resources(self) -> None:
@@ -145,7 +142,7 @@ class LinuxFilePlatform(FilePlatform):
             )
         
     def _open_workspace(self) -> None:
-        """Acquire the trusted workspace directory."""
+        """Acquire the trusted workspace directory. close via platform"""
 
         # for linux, keep one starting /
         workspace = "/" + self.config.workspace_root.lstrip("/")
@@ -173,7 +170,7 @@ class LinuxFilePlatform(FilePlatform):
 
      
     def _open_authorized_roots(self) -> None:
-        """Open configured roots and record their initial identities."""
+        """Open configured roots and record their initial identities. close via platform"""
 
         workspace_fd = self._workspace_fd
 
@@ -261,3 +258,137 @@ class LinuxFilePlatform(FilePlatform):
                 raise PlatformRequestError(
                     PlatformErrorCode.AUTHORIZATION_STATE_CHANGED,
                 )
+            
+    @contextmanager
+    def _open_regular_target(
+        self,
+        relative_path: str,
+    ) -> Iterator[int]:
+        """ Yield a reference to a regular file, then close it.
+        
+        """
+        self._ensure_open()
+
+        workspace_fd = self._workspace_fd
+        if workspace_fd is None:
+            raise RuntimeError("Workspace directory is not open.")
+        
+        target_fd = self._syscalls.open_beneath(
+            directory_fd=workspace_fd,
+            relative_path=relative_path,
+            flags=os.O_PATH,
+        )
+
+        try:
+            metadata = os.fstat(target_fd)
+
+            if not stat.S_ISREG(metadata.st_mode):
+                raise PlatformRequestError(
+                    PlatformErrorCode.NOT_REGULAR_FILE,
+                )
+
+            yield target_fd
+
+        finally:
+            os.close(target_fd)
+
+
+    def _path_from_fd(self, fd: int) -> PurePosixPath:
+        """
+        Get an opened file's path; reject unverifiable results
+        """
+        try:
+            # check opened files by current process in Linux
+            raw_path = os.readlink(f"/proc/self/fd/{fd}")
+        except OSError as exc:
+            raise PlatformRequestError(
+                PlatformErrorCode.AUTHORIZATION_STATE_UNVERIFIABLE,
+            ) from exc
+
+        path = PurePosixPath(raw_path)
+
+        if (
+            not path.is_absolute()
+            or ".." in path.parts
+            or raw_path.endswith(" (deleted)")
+        ):
+            raise PlatformRequestError(
+                PlatformErrorCode.AUTHORIZATION_STATE_UNVERIFIABLE,
+            )
+
+        return path
+    
+    def _authorize_target(self, target_fd: int) -> PurePosixPath:
+        """Check target membership under stable workspace conditions."""
+        self._ensure_open()
+
+        if not self._authorized_root_fds:
+            raise PlatformRequestError(
+                PlatformErrorCode.NO_AUTHORIZED_ROOTS,
+            )
+
+        target_path = self._path_from_fd(target_fd)
+
+        root_paths = tuple(
+            self._path_from_fd(root_fd)
+            for root_fd in self._authorized_root_fds.values()
+        )
+
+        if any(
+            # comparison path components
+            target_path.is_relative_to(root_path)
+            for root_path in root_paths
+        ):
+            return target_path
+
+        raise PlatformRequestError(
+            PlatformErrorCode.OUTSIDE_AUTHORIZED_ROOTS,
+            resolved_path=str(target_path),
+        )
+    
+    def _identity_from_fd(self, fd: int) -> FileIdentity:
+        """Get the identity of an already-opened file."""
+        metadata = os.fstat(fd)
+
+        return FileIdentity(
+            device=metadata.st_dev,
+            inode=metadata.st_ino,
+        )
+    
+    @contextmanager
+    def _open_readable_target(
+        self,
+        target_fd: int,
+        resolved_path: PurePosixPath,
+    ) -> Iterator[OpenedFile]:
+        """Open a readable stream for an already-authorized regular file."""
+        self._ensure_open()
+
+        expected_identity = self._identity_from_fd(target_fd)
+
+        readable_fd = os.open(
+            f"/proc/self/fd/{target_fd}",
+            os.O_RDONLY | os.O_CLOEXEC,
+        )
+
+        try:
+            # file decsriptor int as input, output bufferred reader
+            stream = os.fdopen(readable_fd, "rb")
+        except BaseException:
+            os.close(readable_fd)
+            raise
+
+        with stream:
+            actual_identity = self._identity_from_fd(stream.fileno())
+
+            if actual_identity != expected_identity:
+                raise PlatformRequestError(
+                    PlatformErrorCode.AUTHORIZATION_STATE_UNVERIFIABLE,
+                    resolved_path=str(resolved_path),
+                )
+
+            yield OpenedFile(
+                identity=actual_identity,
+                stream=stream,
+                resolved_path=str(resolved_path),
+            )
