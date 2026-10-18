@@ -9,6 +9,7 @@ from .linux_syscalls import UnsupportedPlatformError, LinuxSyscalls
 from .path_utils import authorized_root_relative_path, request_relative_path
 from collections.abc import Iterator
 from contextlib import contextmanager
+import errno
 
 
 class LinuxFilePlatform(FilePlatform):
@@ -273,14 +274,41 @@ class LinuxFilePlatform(FilePlatform):
         if workspace_fd is None:
             raise RuntimeError("Workspace directory is not open.")
         
-        target_fd = self._syscalls.open_beneath(
-            directory_fd=workspace_fd,
-            relative_path=relative_path,
-            flags=os.O_PATH,
-        )
+        try:
+            target_fd = self._syscalls.open_beneath(
+                directory_fd=workspace_fd,
+                relative_path=relative_path,
+                flags=os.O_PATH,
+            )
+        except FileNotFoundError as exc:
+            raise PlatformRequestError(
+                PlatformErrorCode.FILE_NOT_FOUND,
+            ) from exc
+        except PermissionError as exc:
+            raise PlatformRequestError(
+                PlatformErrorCode.PERMISSION_DENIED,
+            ) from exc
+
+        except OSError as exc:
+            if exc.errno == errno.EXDEV:
+                code = PlatformErrorCode.OUTSIDE_WORKSPACE
+            elif exc.errno in (errno.EAGAIN, errno.ELOOP):
+                code = PlatformErrorCode.AUTHORIZATION_STATE_UNVERIFIABLE
+            elif exc.errno in (errno.ENOTDIR, errno.ENAMETOOLONG):
+                code = PlatformErrorCode.INVALID_PATH
+            else:
+                code = PlatformErrorCode.IO_ERROR
+
+            raise PlatformRequestError(code) from exc
 
         try:
-            metadata = os.fstat(target_fd)
+            try:
+                metadata = os.fstat(target_fd)
+
+            except OSError as exc:
+                raise PlatformRequestError(
+                    PlatformErrorCode.AUTHORIZATION_STATE_UNVERIFIABLE,
+                ) from exc
 
             if not stat.S_ISREG(metadata.st_mode):
                 raise PlatformRequestError(
@@ -348,7 +376,12 @@ class LinuxFilePlatform(FilePlatform):
     
     def _identity_from_fd(self, fd: int) -> FileIdentity:
         """Get the identity of an already-opened file."""
-        metadata = os.fstat(fd)
+        try:
+            metadata = os.fstat(fd)
+        except OSError as exc:
+            raise PlatformRequestError(
+                PlatformErrorCode.AUTHORIZATION_STATE_UNVERIFIABLE,
+            ) from exc
 
         return FileIdentity(
             device=metadata.st_dev,
@@ -366,16 +399,41 @@ class LinuxFilePlatform(FilePlatform):
 
         expected_identity = self._identity_from_fd(target_fd)
 
-        readable_fd = os.open(
-            f"/proc/self/fd/{target_fd}",
-            os.O_RDONLY | os.O_CLOEXEC,
-        )
+        try:
+            readable_fd = os.open(
+                f"/proc/self/fd/{target_fd}",
+                os.O_RDONLY | os.O_CLOEXEC,
+            )
+
+        except PermissionError as exc:
+            raise PlatformRequestError(
+                PlatformErrorCode.PERMISSION_DENIED,
+                resolved_path=str(resolved_path),
+            ) from exc
+        except OSError as exc:
+            raise PlatformRequestError(
+                PlatformErrorCode.IO_ERROR,
+                resolved_path=str(resolved_path),
+            ) from exc
 
         try:
             # file decsriptor int as input, output bufferred reader
             stream = os.fdopen(readable_fd, "rb")
-        except BaseException:
-            os.close(readable_fd)
+        except BaseException as exc:
+            try:
+                os.close(readable_fd)
+            except OSError as cleanup_error:
+                raise BaseExceptionGroup(
+                    "Creating the stream and closing its fd both failed.",
+                    [exc, cleanup_error],
+                ) from None
+
+            if isinstance(exc, OSError):
+                raise PlatformRequestError(
+                    PlatformErrorCode.IO_ERROR,
+                    resolved_path=str(resolved_path),
+                ) from exc
+
             raise
 
         with stream:
