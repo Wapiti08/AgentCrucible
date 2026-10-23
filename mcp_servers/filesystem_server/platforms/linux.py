@@ -1,7 +1,7 @@
 from contextlib import AbstractContextManager
 import stat
 from .base import FilePlatform, OpenedFile, PlatformInitializationError, FileIdentity, PlatformErrorCode, PlatformRequestError
-from ..models import FileServiceConfig, ReadRequest
+from ..models import FileServiceConfig, ReadRequest, PolicyDecision
 import os
 import sys
 from pathlib import PurePosixPath
@@ -71,6 +71,7 @@ class LinuxFilePlatform(FilePlatform):
         if not self._authorized_root_fds:
             raise PlatformRequestError(
                 PlatformErrorCode.NO_AUTHORIZED_ROOTS,
+                policy_decision=PolicyDecision.BLOCKED,
             )
         
         relative_path = request_relative_path(
@@ -291,8 +292,12 @@ class LinuxFilePlatform(FilePlatform):
 
         except OSError as exc:
             if exc.errno == errno.EXDEV:
-                code = PlatformErrorCode.OUTSIDE_WORKSPACE
-            elif exc.errno in (errno.EAGAIN, errno.ELOOP):
+                raise PlatformRequestError(
+                    PlatformErrorCode.OUTSIDE_WORKSPACE,
+                    policy_decision=PolicyDecision.BLOCKED,
+                ) from exc
+
+            if exc.errno in (errno.EAGAIN, errno.ELOOP):
                 code = PlatformErrorCode.AUTHORIZATION_STATE_UNVERIFIABLE
             elif exc.errno in (errno.ENOTDIR, errno.ENAMETOOLONG):
                 code = PlatformErrorCode.INVALID_PATH
@@ -353,6 +358,7 @@ class LinuxFilePlatform(FilePlatform):
         if not self._authorized_root_fds:
             raise PlatformRequestError(
                 PlatformErrorCode.NO_AUTHORIZED_ROOTS,
+                policy_decision=PolicyDecision.BLOCKED,
             )
 
         target_path = self._path_from_fd(target_fd)
@@ -372,6 +378,7 @@ class LinuxFilePlatform(FilePlatform):
         raise PlatformRequestError(
             PlatformErrorCode.OUTSIDE_AUTHORIZED_ROOTS,
             resolved_path=str(target_path),
+            policy_decision=PolicyDecision.BLOCKED,
         )
     
     def _identity_from_fd(self, fd: int) -> FileIdentity:

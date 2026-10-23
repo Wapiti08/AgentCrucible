@@ -2,7 +2,7 @@
 
 from pathlib import PurePosixPath
 from .base import PlatformInitializationError, PlatformErrorCode, PlatformRequestError
-
+from ..models import PolicyDecision
 
 def authorized_root_relative_path(
     workspace_root: str,
@@ -88,6 +88,7 @@ def request_relative_path(
     except ValueError as exc:
         raise PlatformRequestError(
             PlatformErrorCode.OUTSIDE_WORKSPACE,
+            policy_decision=PolicyDecision.BLOCKED,
         ) from exc
 
     return str(relative)

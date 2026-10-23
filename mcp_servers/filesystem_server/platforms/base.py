@@ -7,8 +7,7 @@ from enum import Enum
 from types import TracebackType
 from typing import BinaryIO, Self
 
-from ..models import FileServiceConfig, ReadRequest
-
+from ..models import FileServiceConfig, ReadRequest, PolicyDecision
 
 class PlatformErrorCode(str, Enum):
     INVALID_PATH = "invalid_path"
@@ -37,11 +36,14 @@ class PlatformRequestError(Exception):
         code: PlatformErrorCode,
         *,
         resolved_path: str | None = None,
+        policy_decision: PolicyDecision = PolicyDecision.NOT_EVALUATED,
     ) -> None:
         # what is required by RuntimeError
         super().__init__(code.value)
         self.code = code
         self.resolved_path = resolved_path
+        # blocked/allowed/not_evaluated
+        self.policy_decision = policy_decision
 
 
 @dataclass(frozen=True)
