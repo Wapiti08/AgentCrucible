@@ -6,12 +6,16 @@ Missing openat2 support on Linux is a failure, not a skipped security test.
 """
 
 import os
+from hashlib import sha256
 from pathlib import Path
 import sys
 import tempfile
 import unittest
 
-from mcp_servers.filesystem_server.models import FileServiceConfig, ReadRequest
+from mcp_servers.filesystem_server.models import (
+    ExecutionStatus, FileServiceConfig, PolicyDecision, ReadRequest,
+)
+from mcp_servers.filesystem_server.service import FileService
 from mcp_servers.filesystem_server.platforms.base import (
     PlatformErrorCode as Code,
     PlatformInitializationError,
@@ -39,11 +43,11 @@ class LinuxFilesystemTests(unittest.TestCase):
         (self.root / "outside.txt").write_text("synthetic outside fixture")
         self.platform = self.make_platform()
 
-    def make_platform(self, roots=("public",)):
+    def make_platform(self, roots=("public",), limit=1024):
         platform = LinuxFilePlatform(FileServiceConfig(
             workspace_root=str(self.workspace),
             authorized_roots=roots,
-            max_read_bytes=1024,
+            max_read_bytes=limit,
         ))
         self.addCleanup(platform.close)
         return platform
@@ -148,6 +152,86 @@ class LinuxFilesystemTests(unittest.TestCase):
         with self.assertRaises(PlatformInitializationError):
             self.make_platform(("public", "missing-root"))
         self.assertEqual(self.fd_count(), before)
+
+    def test_service_read_boundaries_and_digest(self):
+        platform = self.make_platform(limit=4)
+        service = FileService(platform)
+        target = self.public / "boundary.bin"
+        for content in (b"", b"ab", b"abcd", b"abcde", b"\x00\xffabcdef"):
+            with self.subTest(size=len(content)):
+                target.write_bytes(content)
+                before = self.fd_count()
+                result = service.read(ReadRequest("boundary", "public/boundary.bin"))
+                self.assertIs(result.policy_decision, PolicyDecision.ALLOWED)
+                self.assertIs(result.execution_status, ExecutionStatus.SUCCEEDED)
+                self.assertEqual(result.content, content[:4])
+                self.assertEqual(result.truncated, len(content) > 4)
+                self.assertEqual(result.content_sha256, sha256(content[:4]).hexdigest())
+                self.assertEqual(result.returned_bytes, min(len(content), 4))
+                self.assertEqual(result.resolved_path, str(target))
+                self.assertEqual(result.request_id, "boundary")
+                self.assertEqual(result.original_path, "public/boundary.bin")
+                self.assertEqual(self.fd_count(), before)
+                self.assertFalse(platform.closed)
+
+    def assert_service_failure(self, service, path, code, policy):
+        before = self.fd_count()
+        result = service.read(ReadRequest("failure", path))
+        self.assertEqual(result.request_id, "failure")
+        self.assertEqual(result.original_path, path)
+        self.assertEqual(result.reason, code.value)
+        self.assertIs(result.policy_decision, policy)
+        self.assertIs(result.execution_status, ExecutionStatus.NOT_STARTED)
+        self.assertIsNone(result.content)
+        self.assertIsNone(result.truncated)
+        self.assertIsNone(result.content_sha256)
+        self.assertEqual(result.returned_bytes, 0)
+        self.assertEqual(self.fd_count(), before)
+        return result
+
+    def test_service_policy_rejections(self):
+        service = FileService(self.platform)
+        for path, code in (
+            ("secret/token.txt", Code.OUTSIDE_AUTHORIZED_ROOTS),
+            ("public/../secret/token.txt", Code.OUTSIDE_AUTHORIZED_ROOTS),
+            ("../outside.txt", Code.OUTSIDE_WORKSPACE),
+            (str(self.root / "outside.txt"), Code.OUTSIDE_WORKSPACE),
+        ):
+            with self.subTest(path=path):
+                self.assert_service_failure(service, path, code, PolicyDecision.BLOCKED)
+        empty = FileService(self.make_platform(()))
+        self.assert_service_failure(empty, "public/sample.bin", Code.NO_AUTHORIZED_ROOTS,
+                                    PolicyDecision.BLOCKED)
+
+    def test_service_missing_and_invalid_inputs_are_not_evaluated(self):
+        service = FileService(self.platform)
+        for path, code in (("public/missing", Code.FILE_NOT_FOUND),
+                           ("", Code.INVALID_PATH), ("public/\x00", Code.INVALID_PATH)):
+            with self.subTest(path=path):
+                result = self.assert_service_failure(service, path, code,
+                                                     PolicyDecision.NOT_EVALUATED)
+                self.assertIsNone(result.resolved_path)
+
+    def test_service_symlink_resolves_to_authorized_target(self):
+        (self.workspace / "shortcut").symlink_to("public", target_is_directory=True)
+        service = FileService(self.platform)
+        before = self.fd_count()
+        result = service.read(ReadRequest("link", "shortcut/sample.bin"))
+        self.assertIs(result.execution_status, ExecutionStatus.SUCCEEDED)
+        self.assertIs(result.policy_decision, PolicyDecision.ALLOWED)
+        self.assertEqual(result.content, self.content)
+        self.assertFalse(result.truncated)
+        self.assertEqual(result.resolved_path, str(self.public / "sample.bin"))
+        self.assertEqual(self.fd_count(), before)
+
+    def test_service_can_read_after_rejected_request(self):
+        service = FileService(self.platform)
+        self.assert_service_failure(service, "secret/token.txt",
+                                    Code.OUTSIDE_AUTHORIZED_ROOTS, PolicyDecision.BLOCKED)
+        result = service.read(ReadRequest("next", "public/sample.bin"))
+        self.assertIs(result.execution_status, ExecutionStatus.SUCCEEDED)
+        self.assertEqual(result.content, self.content)
+        self.assertFalse(self.platform.closed)
 
 
 if __name__ == "__main__":

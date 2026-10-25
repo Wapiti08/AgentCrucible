@@ -388,6 +388,7 @@ class LinuxFilePlatform(FilePlatform):
         except OSError as exc:
             raise PlatformRequestError(
                 PlatformErrorCode.AUTHORIZATION_STATE_UNVERIFIABLE,
+                policy_decision=PolicyDecision.ERROR,
             ) from exc
 
         return FileIdentity(
@@ -416,11 +417,13 @@ class LinuxFilePlatform(FilePlatform):
             raise PlatformRequestError(
                 PlatformErrorCode.PERMISSION_DENIED,
                 resolved_path=str(resolved_path),
+                policy_decision=PolicyDecision.ALLOWED,
             ) from exc
         except OSError as exc:
             raise PlatformRequestError(
                 PlatformErrorCode.IO_ERROR,
                 resolved_path=str(resolved_path),
+                policy_decision=PolicyDecision.ALLOWED,
             ) from exc
 
         try:
@@ -439,6 +442,7 @@ class LinuxFilePlatform(FilePlatform):
                 raise PlatformRequestError(
                     PlatformErrorCode.IO_ERROR,
                     resolved_path=str(resolved_path),
+                    policy_decision=PolicyDecision.ALLOWED,
                 ) from exc
 
             raise
@@ -450,6 +454,7 @@ class LinuxFilePlatform(FilePlatform):
                 raise PlatformRequestError(
                     PlatformErrorCode.AUTHORIZATION_STATE_UNVERIFIABLE,
                     resolved_path=str(resolved_path),
+                    policy_decision=PolicyDecision.ERROR,
                 )
 
             yield OpenedFile(
