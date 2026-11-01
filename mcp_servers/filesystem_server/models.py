@@ -77,6 +77,10 @@ class ReadResult:
     reason: str
     content: bytes | None = field(default=None, repr=False)
     truncated: bool | None = None
+    authorized_roots: tuple[str, ...] | None = field(
+        default=None,
+        repr=False,
+    )
     # automatically generated instead of manually transferred
     content_sha256: str | None = field(init=False, default=None)
 
@@ -86,6 +90,20 @@ class ReadResult:
 
         if not isinstance(self.original_path, str):
             raise TypeError("original_path must be a string.")
+
+        if self.authorized_roots is not None:
+            if not isinstance(self.authorized_roots, tuple):
+                raise TypeError(
+                    "authorized_roots must be a tuple or None."
+                )
+
+            if not all(
+                isinstance(root, str) and root.strip()
+                for root in self.authorized_roots
+            ):
+                raise ValueError(
+                    "Each authorized root must be a non-empty string."
+                )
 
         if self.resolved_path is not None:
             if (

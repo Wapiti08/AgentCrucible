@@ -17,11 +17,11 @@ class LinuxFilePlatform(FilePlatform):
         super().__init__(config)
         # None means not opened yet, otherwise it will be a valid file descriptor
         self._workspace_fd: int | None = None
-        # define multiply authorized roots 
+        # define multiply authorized roots
         self._authorized_root_fds: dict[str, int] = {}
         self._authorized_root_identities: dict[str, FileIdentity] = {}
         self._authorization_invalidated = False
-        
+
         try:
             self._check_environment()
             # check safe open capability and capture workspace fd
@@ -29,7 +29,7 @@ class LinuxFilePlatform(FilePlatform):
             self._open_workspace()
             self._probe_openat2()
             self._open_authorized_roots()
-        
+
         except BaseException as init_error:
             try:
                 self.close()
@@ -38,7 +38,7 @@ class LinuxFilePlatform(FilePlatform):
                     "Initialization failed and cleanup also failed.",
                     [init_error, cleanup_error],
                 ) from None
-            
+
             if isinstance(init_error, PlatformInitializationError):
                 raise
 
@@ -49,9 +49,9 @@ class LinuxFilePlatform(FilePlatform):
 
             raise
 
-        
+
     @contextmanager
-    def open_read(self, 
+    def open_read(self,
                   request: ReadRequest) -> Iterator[OpenedFile]:
         """ Validate a read request before attempting to open its target.
 
@@ -60,20 +60,21 @@ class LinuxFilePlatform(FilePlatform):
 
         if not isinstance(request, ReadRequest):
             raise TypeError("request must be a ReadRequest instance.")
-        
+
         original_path = request.original_path
 
         if not original_path or "\x00" in original_path:
             raise PlatformRequestError(
                 PlatformErrorCode.INVALID_PATH,
             )
-        
+
         if not self._authorized_root_fds:
             raise PlatformRequestError(
                 PlatformErrorCode.NO_AUTHORIZED_ROOTS,
                 policy_decision=PolicyDecision.BLOCKED,
+                authorized_roots=(),
             )
-        
+
         relative_path = request_relative_path(
             self.config.workspace_root,
             original_path
@@ -82,23 +83,26 @@ class LinuxFilePlatform(FilePlatform):
         self._check_authorized_roots()
 
         with self._open_regular_target(relative_path) as target_fd:
-            resolved_path = self._authorize_target(target_fd)
-    
+            resolved_path, authorized_roots = self._authorize_target(
+                            target_fd,
+                        )
+
             with self._open_readable_target(
                 target_fd,
                 resolved_path,
+                authorized_roots=authorized_roots,
             ) as opened_file:
-                
+
                 yield opened_file
 
 
     def _close_resources(self) -> None:
         # get all owned fd
         owned_fds = set(self._authorized_root_fds.values())
-        
+
         if self._workspace_fd is not None:
             owned_fds.add(self._workspace_fd)
-        
+
         # clear ownership records, avoid double closing
         self._authorized_root_fds.clear()
         self._authorized_root_identities.clear()
@@ -117,13 +121,13 @@ class LinuxFilePlatform(FilePlatform):
                 "Failed to close some directory file descriptors.",
                 errors,
             )
-        
+
     def _check_environment(self) -> None:
         if sys.platform != "linux":
             raise PlatformInitializationError(
                 "LinuxFilePlatform requires Linux."
             )
-        
+
         workspace = self.config.workspace_root
 
         if "\x00" in workspace:
@@ -142,7 +146,7 @@ class LinuxFilePlatform(FilePlatform):
             raise PlatformInitializationError(
                 "Workspace configuration must not contain '..'."
             )
-        
+
     def _open_workspace(self) -> None:
         """Acquire the trusted workspace directory. close via platform"""
 
@@ -170,7 +174,7 @@ class LinuxFilePlatform(FilePlatform):
 
         os.close(probe_fd)
 
-     
+
     def _open_authorized_roots(self) -> None:
         """Open configured roots and record their initial identities. close via platform"""
 
@@ -178,7 +182,7 @@ class LinuxFilePlatform(FilePlatform):
 
         if workspace_fd is None:
             raise RuntimeError("Workspace directory is not open.")
-        
+
         for configured_root in self.config.authorized_roots:
             relative_path = authorized_root_relative_path(
                 self.config.workspace_root,
@@ -213,11 +217,11 @@ class LinuxFilePlatform(FilePlatform):
                 device=metadata.st_dev,
                 inode=metadata.st_ino,
         )
-            
+
 
     def _check_authorized_roots(self) -> None:
         """Reject requests if the configured directory state is no longer valid."""
-        
+
         self._ensure_open()
 
         if self._authorization_invalidated:
@@ -260,21 +264,21 @@ class LinuxFilePlatform(FilePlatform):
                 raise PlatformRequestError(
                     PlatformErrorCode.AUTHORIZATION_STATE_CHANGED,
                 )
-            
+
     @contextmanager
     def _open_regular_target(
         self,
         relative_path: str,
     ) -> Iterator[int]:
         """ Yield a reference to a regular file, then close it.
-        
+
         """
         self._ensure_open()
 
         workspace_fd = self._workspace_fd
         if workspace_fd is None:
             raise RuntimeError("Workspace directory is not open.")
-        
+
         try:
             target_fd = self._syscalls.open_beneath(
                 directory_fd=workspace_fd,
@@ -350,8 +354,8 @@ class LinuxFilePlatform(FilePlatform):
             )
 
         return path
-    
-    def _authorize_target(self, target_fd: int) -> PurePosixPath:
+
+    def _authorize_target(self, target_fd: int) -> tuple[PurePosixPath, tuple[str, ...]]:
         """Check target membership under stable workspace conditions."""
         self._ensure_open()
 
@@ -359,6 +363,7 @@ class LinuxFilePlatform(FilePlatform):
             raise PlatformRequestError(
                 PlatformErrorCode.NO_AUTHORIZED_ROOTS,
                 policy_decision=PolicyDecision.BLOCKED,
+                authorized_roots=(),
             )
 
         target_path = self._path_from_fd(target_fd)
@@ -368,44 +373,58 @@ class LinuxFilePlatform(FilePlatform):
             for root_fd in self._authorized_root_fds.values()
         )
 
+        authorized_roots = tuple(str(root) for root in root_paths)
+
         if any(
             # comparison path components
             target_path.is_relative_to(root_path)
             for root_path in root_paths
         ):
-            return target_path
+            return target_path, authorized_roots
 
         raise PlatformRequestError(
             PlatformErrorCode.OUTSIDE_AUTHORIZED_ROOTS,
             resolved_path=str(target_path),
             policy_decision=PolicyDecision.BLOCKED,
+            authorized_roots=authorized_roots,
         )
-    
-    def _identity_from_fd(self, fd: int) -> FileIdentity:
-        """Get the identity of an already-opened file."""
+
+    def _identity_from_fd(
+        self,
+        fd: int,
+        *,
+        authorized_roots: tuple[str, ...],
+    ) -> FileIdentity:
+        """Get file identity while preserving authorization evidence."""
         try:
             metadata = os.fstat(fd)
         except OSError as exc:
             raise PlatformRequestError(
                 PlatformErrorCode.AUTHORIZATION_STATE_UNVERIFIABLE,
                 policy_decision=PolicyDecision.ERROR,
+                authorized_roots=authorized_roots,
             ) from exc
 
         return FileIdentity(
             device=metadata.st_dev,
             inode=metadata.st_ino,
         )
-    
+
     @contextmanager
     def _open_readable_target(
         self,
         target_fd: int,
         resolved_path: PurePosixPath,
+                *,
+        authorized_roots: tuple[str, ...],
     ) -> Iterator[OpenedFile]:
         """Open a readable stream for an already-authorized regular file."""
         self._ensure_open()
 
-        expected_identity = self._identity_from_fd(target_fd)
+        expected_identity = self._identity_from_fd(
+            target_fd,
+            authorized_roots=authorized_roots,
+            )
 
         try:
             readable_fd = os.open(
@@ -418,12 +437,14 @@ class LinuxFilePlatform(FilePlatform):
                 PlatformErrorCode.PERMISSION_DENIED,
                 resolved_path=str(resolved_path),
                 policy_decision=PolicyDecision.ALLOWED,
+                authorized_roots=authorized_roots,
             ) from exc
         except OSError as exc:
             raise PlatformRequestError(
                 PlatformErrorCode.IO_ERROR,
                 resolved_path=str(resolved_path),
                 policy_decision=PolicyDecision.ALLOWED,
+                authorized_roots=authorized_roots,
             ) from exc
 
         try:
@@ -443,22 +464,28 @@ class LinuxFilePlatform(FilePlatform):
                     PlatformErrorCode.IO_ERROR,
                     resolved_path=str(resolved_path),
                     policy_decision=PolicyDecision.ALLOWED,
+                    authorized_roots=authorized_roots,
                 ) from exc
 
             raise
 
         with stream:
-            actual_identity = self._identity_from_fd(stream.fileno())
+            actual_identity = self._identity_from_fd(
+                stream.fileno(),
+                authorized_roots=authorized_roots,
+            )
 
             if actual_identity != expected_identity:
                 raise PlatformRequestError(
                     PlatformErrorCode.AUTHORIZATION_STATE_UNVERIFIABLE,
                     resolved_path=str(resolved_path),
                     policy_decision=PolicyDecision.ERROR,
+                    authorized_roots=authorized_roots,
                 )
 
             yield OpenedFile(
                 identity=actual_identity,
                 stream=stream,
                 resolved_path=str(resolved_path),
+                authorized_roots=authorized_roots,
             )

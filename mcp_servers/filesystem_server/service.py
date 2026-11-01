@@ -16,15 +16,14 @@ class FileService:
         self._platform = platform
 
     def read(self, request: ReadRequest) -> ReadResult:
-        '''
-        read max bytes and truncated the exceeded part
-        '''
-
+        """Read bounded content and preserve authorization evidence."""
         limit = self._platform.config.max_read_bytes
 
         try:
             with self._platform.open_read(request) as opened:
                 resolved_path = opened.resolved_path
+                authorized_roots = opened.authorized_roots
+
                 try:
                     data = opened.stream.read(limit + 1)
                 except OSError as exc:
@@ -32,6 +31,7 @@ class FileService:
                         PlatformErrorCode.IO_ERROR,
                         resolved_path=resolved_path,
                         policy_decision=PolicyDecision.ALLOWED,
+                        authorized_roots=authorized_roots,
                     ) from exc
 
         except PlatformRequestError as exc:
@@ -50,6 +50,7 @@ class FileService:
                 reason=exc.code.value,
                 content=None,
                 truncated=None,
+                authorized_roots=exc.authorized_roots,
             )
 
         return ReadResult(
@@ -61,4 +62,5 @@ class FileService:
             reason="File read successfully.",
             content=data[:limit],
             truncated=len(data) > limit,
+            authorized_roots=authorized_roots,
         )

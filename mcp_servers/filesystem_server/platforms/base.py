@@ -37,6 +37,7 @@ class PlatformRequestError(Exception):
         *,
         resolved_path: str | None = None,
         policy_decision: PolicyDecision = PolicyDecision.NOT_EVALUATED,
+        authorized_roots: tuple[str, ...] | None = None,
     ) -> None:
         # what is required by RuntimeError
         super().__init__(code.value)
@@ -44,6 +45,7 @@ class PlatformRequestError(Exception):
         self.resolved_path = resolved_path
         # blocked/allowed/not_evaluated
         self.policy_decision = policy_decision
+        self.authorized_roots = authorized_roots
 
 
 @dataclass(frozen=True)
@@ -64,6 +66,7 @@ class OpenedFile:
     identity: FileIdentity
     stream: BinaryIO
     resolved_path: str | None
+    authorized_roots: tuple[str, ...] | None = None
 
 
 class FilePlatform(ABC):

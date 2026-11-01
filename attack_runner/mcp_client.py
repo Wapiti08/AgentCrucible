@@ -5,7 +5,7 @@ from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-
+from .mcp_models import FileReadResponse
 from mcp_servers.filesystem_server.models import FileServiceConfig
 
 '''
@@ -20,9 +20,14 @@ low-level asyncio is achieved by mcp library
 @asynccontextmanager
 async def connect_filesystem_server(
     config: FileServiceConfig,
+    *,
+    audit_path: Path,
 ) -> AsyncIterator[ClientSession]:
     """Start one filesystem server and reuse its session for a batch."""
     # project root
+    if not audit_path.is_absolute():
+        raise ValueError("audit_path must be absolute.")
+
     project_root = Path(__file__).resolve().parents[1]
 
     # cmd sent to python subprocess
@@ -37,6 +42,8 @@ async def connect_filesystem_server(
         config.workspace_root,
         "--max-read-bytes",
         str(config.max_read_bytes),
+        "--audit-file",
+        str(audit_path),
     ]
 
     for root in config.authorized_roots:
@@ -60,3 +67,82 @@ async def connect_filesystem_server(
             await session.initialize()
             # hand over session control
             yield session
+
+
+def validate_read_response(
+    raw_data: object,
+    *,
+    max_read_bytes: int,
+) -> FileReadResponse:
+    """
+    restrict content decoding budget
+
+    params:
+        max_read_bytes: from configuration while not user provided value
+
+    """
+    if type(max_read_bytes) is not int:
+        raise TypeError("max_read_bytes must be an integer.")
+
+    if max_read_bytes <= 0:
+        raise ValueError("max_read_bytes must be positive.")
+
+    if not isinstance(raw_data, dict):
+        raise ValueError("Expected a structured response object.")
+
+    encoded = raw_data.get("content_base64")
+    # make sure it is integer
+    max_encoded_length = 4 * ((max_read_bytes + 2) // 3)
+
+    if isinstance(encoded, str) and len(encoded) > max_encoded_length:
+        raise ValueError("Encoded content exceeds the configured limit.")
+
+    returned_bytes = raw_data.get("returned_bytes")
+    if type(returned_bytes) is int and returned_bytes > max_read_bytes:
+        raise ValueError("Returned bytes exceed the configured limit.")
+
+    response = FileReadResponse.model_validate(raw_data)
+
+    if response.truncated is True:
+        if response.returned_bytes != max_read_bytes:
+            raise ValueError(
+                "Truncated content must fill the configured read limit."
+            )
+
+    return response
+
+
+class MCPToolCallError(RuntimeError):
+    """The MCP server reported a tool execution error."""
+
+
+async def read_file(
+    session: ClientSession,
+    path: str,
+    *,
+    max_read_bytes: int,
+) -> FileReadResponse:
+
+    if not isinstance(path, str):
+        raise TypeError("path must be a string.")
+
+    if type(max_read_bytes) is not int:
+        raise TypeError("max_read_bytes must be an integer.")
+
+    if max_read_bytes <= 0:
+        raise ValueError("max_read_bytes must be positive.")
+
+    result = await session.call_tool(
+        "read_file",
+        {"path": path},
+    )
+
+    if result.is_error:
+        raise MCPToolCallError(
+            "The filesystem MCP tool reported an error."
+        )
+
+    return validate_read_response(
+        result.structured_content,
+        max_read_bytes=max_read_bytes,
+    )
