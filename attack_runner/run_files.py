@@ -17,6 +17,10 @@ import json
 import sys
 import argparse
 from collections.abc import Sequence
+from detectors.engine import Detector, DetectionStatus
+from detectors.rules.fs_path_traversal import FilePathOutsideScopeRule
+
+from .audit_events import build_file_access_event
 from mcp_servers.filesystem_server.models import FileServiceConfig
 from .batch import (
     BatchAbortedError,
@@ -25,6 +29,8 @@ from .batch import (
     run_file_batch,
     validate_cases,
 )
+from .audit_reader import AuditReadError, load_audit_records
+from .audit_match import AuditMatchError, match_audit_records
 
 
 def parse_inputs(
@@ -165,7 +171,54 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     print_results(results)
+
+    # load audit files and check matched records
+    try:
+        records = load_audit_records(audit_path)
+        audited_results = match_audit_records(results, records)
+    except (AuditReadError, AuditMatchError) as exc:
+        print(
+            json.dumps(
+                {
+                    "error": "audit_validation_failed",
+                    "reason": str(exc),
+                },
+                ensure_ascii=True,
+            ),
+            file=sys.stderr,
+        )
+        return 1
+
+    # use detector to check matched audited results
+    detector = Detector(
+        rules=(FilePathOutsideScopeRule(),),
+    )
+    detection_failed = False
+
+    for audited in audited_results:
+        event = build_file_access_event(audited)
+        findings = detector.detect(event)
+
+        for finding in findings:
+            record = {
+                "record_type": "detector.finding",
+                "case_id": audited.result.case_id,
+                "request_id": audited.result.response.request_id,
+                "event_id": finding.event_id,
+                "rule_id": finding.rule_id,
+                "status": finding.status.value,
+                "reason": finding.reason,
+            }
+            print(json.dumps(record, ensure_ascii=True))
+
+            if finding.status is DetectionStatus.ERROR:
+                detection_failed = True
+
+    if detection_failed:
+        return 1
+
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -4,6 +4,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 import json
 from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -14,7 +15,7 @@ from attack_runner.run_files import main, parse_inputs
 
 class RunFilesTests(unittest.TestCase):
     def setUp(self):
-        self.audit_path = Path("/audit/events.jsonl")
+        self.audit_path = Path(self.enterContext(tempfile.TemporaryDirectory())) / "events.jsonl"
         self.audit_setup = self.enterContext(patch(
             "attack_runner.run_files.create_audit_path", return_value=self.audit_path,
         ))
@@ -25,6 +26,15 @@ class RunFilesTests(unittest.TestCase):
             content_base64=None, returned_bytes=0, truncated=None, content_sha256=None,
         )
         self.completed = (FileReadCaseResult("case-1", "secret/a", response),)
+        self.write_audit()
+
+    def write_audit(self, path="secret/a"):
+        self.audit_path.write_text(json.dumps({
+            "schema_version": 1, "request_id": "request-1",
+            "original_path": path, "resolved_path": None,
+            "authorized_roots": [], "policy_decision": "blocked",
+            "execution_status": "not_started", "reason": "outside_authorized_roots",
+        }) + "\n", encoding="utf-8")
 
     def test_parse_order_defaults_and_empty_attack_path(self):
         config, cases = parse_inputs(self.args + ["--path", ""])
@@ -53,7 +63,11 @@ class RunFilesTests(unittest.TestCase):
         with patch("attack_runner.run_files.run_file_batch", batch), redirect_stdout(out), redirect_stderr(err):
             self.assertEqual(main(self.args), 0)
         self.assertEqual(json.loads(err.getvalue()), {"audit_file": str(self.audit_path)})
-        row = json.loads(out.getvalue())
+        rows = [json.loads(line) for line in out.getvalue().splitlines()]
+        row, finding = rows
+        self.assertEqual(finding["status"], "not_evaluated")
+        self.assertEqual(finding["record_type"], "detector.finding")
+        self.assertEqual(finding["request_id"], row["request_id"])
         self.assertEqual(row["policy_decision"], "blocked")
         self.assertEqual(row["request_id"], "request-1")
         self.assertNotIn("content_base64", row)
@@ -87,13 +101,42 @@ class RunFilesTests(unittest.TestCase):
 
     def test_output_escapes_control_characters(self):
         path = "secret/\n\x1b[31m"
+        self.write_audit(path)
         completed = (FileReadCaseResult("case-1", path, self.completed[0].response),)
         out = StringIO()
         with patch("attack_runner.run_files.run_file_batch", AsyncMock(return_value=completed)), redirect_stdout(out), redirect_stderr(StringIO()):
             self.assertEqual(main(self.args), 0)
-        self.assertEqual(len(out.getvalue().splitlines()), 1)
+        self.assertEqual(len(out.getvalue().splitlines()), 2)
         self.assertNotIn("\x1b", out.getvalue())
-        self.assertEqual(json.loads(out.getvalue())["path"], path)
+        self.assertEqual(json.loads(out.getvalue().splitlines()[0])["path"], path)
+
+    def test_bad_audit_preserves_results_but_fails_cli(self):
+        for content in ("{broken\n", "", self.audit_path.read_text().replace(
+                "outside_authorized_roots", "different_reason")):
+            with self.subTest(content=content):
+                self.audit_path.write_text(content, encoding="utf-8")
+                out, err = StringIO(), StringIO()
+                with patch("attack_runner.run_files.run_file_batch",
+                           AsyncMock(return_value=self.completed)), redirect_stdout(out), redirect_stderr(err):
+                    self.assertEqual(main(self.args), 1)
+                self.assertEqual(json.loads(out.getvalue())["request_id"], "request-1")
+                self.assertEqual(json.loads(err.getvalue().splitlines()[-1])["error"],
+                                 "audit_validation_failed")
+
+    def test_detector_error_is_reported_and_exits_one(self):
+        from detectors.engine import DetectionResult, DetectionStatus
+        failure = DetectionResult(
+            event_id="request-1:filesystem.read", rule_id="FS_PATH_OUTSIDE_SCOPE",
+            status=DetectionStatus.ERROR, reason="Synthetic rule failure.",
+        )
+        out = StringIO()
+        with patch("attack_runner.run_files.run_file_batch",
+                   AsyncMock(return_value=self.completed)), patch(
+                       "attack_runner.run_files.Detector") as detector, redirect_stdout(out), redirect_stderr(StringIO()):
+            detector.return_value.detect.return_value = (failure,)
+            self.assertEqual(main(self.args), 1)
+        detector.assert_called_once()
+        self.assertEqual(json.loads(out.getvalue().splitlines()[-1])["status"], "error")
 
     def test_audit_setup_failure_prevents_batch(self):
         self.audit_setup.side_effect = OSError("synthetic failure")

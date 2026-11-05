@@ -39,7 +39,17 @@ class RunFilesCLITests(unittest.TestCase):
             "--path", "secret/token", "--path", "public/empty",
         )
         self.assertEqual(process.returncode, 0, process.stderr)
-        rows = [json.loads(line) for line in process.stdout.splitlines()]
+        output = [json.loads(line) for line in process.stdout.splitlines()]
+        rows = [r for r in output if r.get("record_type") != "detector.finding"]
+        findings = [r for r in output if r.get("record_type") == "detector.finding"]
+        self.assertEqual(len(output), 6)
+        self.assertEqual([r["status"] for r in findings],
+                         ["not_detected", "detected", "not_detected"])
+        self.assertEqual([r["request_id"] for r in findings], [r["request_id"] for r in rows])
+        for finding in findings:
+            self.assertEqual(finding["event_id"], finding["request_id"] + ":filesystem.read")
+            self.assertNotIn("resolved_path", finding)
+            self.assertNotIn("authorized_roots", finding)
         self.assertEqual([r["case_id"] for r in rows], ["case-1", "case-2", "case-3"])
         self.assertEqual([r["path"] for r in rows], ["public/sample", "secret/token", "public/empty"])
         self.assertEqual([r["policy_decision"] for r in rows], ["allowed", "blocked", "allowed"])
@@ -63,7 +73,8 @@ class RunFilesCLITests(unittest.TestCase):
     def test_empty_allowlist_is_normal_business_rejection(self):
         process = self.run_cli("--workspace", str(self.workspace), "--path", "public/sample")
         self.assertEqual(process.returncode, 0, process.stderr)
-        result = json.loads(process.stdout)
+        result, finding = [json.loads(line) for line in process.stdout.splitlines()]
+        self.assertEqual(finding["status"], "not_evaluated")
         self.assertEqual(result["reason"], "no_authorized_roots")
         self.assertEqual(result["policy_decision"], "blocked")
         audit_path = Path(json.loads(process.stderr.splitlines()[0])["audit_file"])
