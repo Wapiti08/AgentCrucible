@@ -1,148 +1,106 @@
 # Architecture
 
-## Processing Flow
+## Scope
 
-Each test follows one traceable flow:
+The first release tests filesystem authorization for file-processing agents.
+The implemented foundation is a direct MCP read workflow; model-driven execution
+and aggregate test reports are still pending.
 
-1. The attack runner creates a run and submits a safe test case.
-2. The vulnerable agent interprets the input and may propose a tool call.
-3. Policy and sandbox layers allow or block the requested operation.
-4. MCP servers execute allowed operations against synthetic fixtures.
-5. Every component emits events using the unified event model.
-6. Detectors create findings; the correlator joins related events.
-7. Scoring assigns an explainable risk level.
-8. Reporters render the same findings as JSON or HTML.
+## Implemented flow
 
-The JSON report is the canonical machine-readable output. The HTML report is a
-presentation of that data and must not introduce different scoring logic.
+```text
+run_files CLI
+  → run_file_batch
+  → MCP client → filesystem MCP server → FileTools
+  → FileService → LinuxFilePlatform
+  → ReadResult → audit writer + public MCP response
+  → audit reader → request-ID matching
+  → SecurityEvent → Detector.detect
+  → JSONL operation results and detector findings
+```
 
-## Unified Event Model
+The server writes its audit record before returning a normal tool response.
+A failed audit write does not undo an operation that already happened.
 
-Events are immutable observations. A later component may emit a finding or
-correlation event, but it must not rewrite the event that it evaluated.
+The client reuses one MCP session for a sequential batch. The CLI loads audit
+records after the normal batch and session shutdown complete.
 
-### Required Fields
+## Responsibilities
 
-| Field | Meaning |
+| Module | Responsibility |
 | --- | --- |
-| `schema_version` | Version of the event contract used by producers and consumers. |
-| `event_id` | Unique identifier for this event. |
-| `run_id` | Identifier shared by all events in one test execution. |
-| `trace_id` | Identifier shared by one end-to-end attack path within the run. |
-| `parent_event_id` | Immediate causal parent; absent only for a root event. |
-| `sequence` | Monotonically increasing number within a trace. |
-| `timestamp` | UTC timestamp assigned when the event is emitted. |
-| `event_type` | Stable category such as input, tool request, policy decision, execution, or finding. |
-| `source` | Component that emitted the event. |
-| `outcome` | Observed state: proposed, allowed, blocked, executed, failed, or detected. |
-| `summary` | Short human-readable description without sensitive raw content. |
-| `data` | Event-type-specific structured fields. |
+| `batch.py` | Validate cases, execute calls, preserve completed results on batch failure |
+| `audit_reader.py` | Parse JSONL, reject malformed records and duplicate IDs |
+| `audit_match.py` | Require one-to-one matching for a normally completed batch |
+| `audit_events.py` | Convert matched evidence without re-reading or resolving paths |
+| `expectations.py` | Compare policy, execution and one specified rule's status |
+| `cases.py` | Bind each input to its expectation and validate case IDs |
+| `suite.py` | Pending orchestration of execution, detection and verdicts |
+| `FileService` | Bounded byte reads and result construction |
+| `LinuxFilePlatform` | Directory handles, openat2 constraints and authorization checks |
+| `Detector` | Dispatch rules and isolate rule errors; never authorize operations |
 
-### Context Fields
+## Evidence contracts
 
-The following belong in `data` when relevant:
+The public MCP response contains request ID, policy and execution states, reason,
+bounded content encoded as Base64, byte count, truncation and content digest.
+It excludes resolved paths and authorized roots.
 
-| Field | Meaning |
-| --- | --- |
-| `actor` | User, agent, MCP server, policy engine, sandbox, or detector. |
-| `tool_name` | Stable name of the requested tool. |
-| `original_arguments` | Arguments proposed by the agent, subject to redaction. |
-| `normalized_arguments` | Canonical values used for authorization and execution. |
-| `authorized_scope` | Tools, paths, commands, hosts, ports, and limits granted to the run. |
-| `policy_decision` | Allow or deny, including the policy or rule identifier and reason. |
-| `execution_result` | Exit state, bounded metadata, and side-effect summary. |
-| `evidence` | Minimal redacted evidence required to support a finding. |
-| `rule_id` | Stable identifier of a matched detection rule. |
-| `risk_score` | Numeric score produced after detection or correlation. |
-| `risk_level` | Human-readable severity derived from the score. |
+The internal audit record contains schema version, request ID, original path,
+resolved path, authorized roots, policy state, execution state and reason.
+It excludes file content. The audit file resides outside the test workspace.
 
-`original_arguments` and `normalized_arguments` must remain distinct. Detectors
-need both to identify traversal, redirect, encoding, and normalization bypasses.
+Normal-batch matching requires:
+- unique request IDs on both sides;
+- no missing or additional audit records;
+- matching original path, policy state, execution state and reason.
 
-## Event Types
+An aborted batch can have an audit record whose response never reached the
+client. It requires separate reconciliation; normal-batch matching must not
+label that record fabricated. That recovery workflow is not implemented.
 
-The initial event vocabulary is:
+The present audit is one final record per request, not a sequence of proposal,
+policy and execution events. It cannot independently prove the absence of
+`tool.execution_started`, nor defend against a compromised audit producer.
 
-- `run.started` and `run.completed`;
-- `input.received`;
-- `agent.tool_proposed`;
-- `policy.decision`;
-- `tool.execution_started` and `tool.execution_completed`;
-- `sandbox.violation`;
-- `detector.finding`;
-- `correlator.finding`;
-- `report.generated`.
+## Detection semantics
 
-New event types may be added without changing existing meanings. Breaking field
-or semantic changes require a new `schema_version`.
+A filesystem SecurityEvent uses:
+- `event_id = request_id + ":filesystem.read"`;
+- `resource_type = "filesystem"`, `operation = "read"`;
+- `FileAccessData(resolved_path, authorized_roots)`.
 
-## Causality and Correlation
+“Read” describes the requested operation, not proof that bytes were read.
+Roots are converted from a JSON list to a tuple. Unknown roots remain `None`;
+an empty tuple means no roots are authorized.
 
-- `run_id` groups everything created by a single runner invocation.
-- `trace_id` groups one attack path, including retries and its resulting tool
-  activity.
-- `parent_event_id` expresses direct causality.
-- `sequence` resolves ordering when timestamps are equal or clocks differ.
-- A detector finding references the event that supplied its evidence.
-- A correlator finding references all contributing event IDs and explains the
-  relationship between them.
+The path rule accepts absolute POSIX path evidence without NUL or unresolved
+`..` components. It compares path components without filesystem access.
+Repeated separators, including leading `//`, are treated as `/` under the
+lab's path contract. This is not symlink resolution.
 
-Missing parents, duplicate identifiers, sequence regressions, or an execution
-without a preceding policy decision are themselves integrity findings.
+Out-of-scope target evidence produces `detected`. Missing or invalid evidence
+produces `not_evaluated`, including some requests blocked before a target path
+can be obtained. A policy block does not automatically imply a finding.
 
-## Authorization Model
+## Outcome separation
 
-Authorization is declared per run and defaults to deny. It may grant a bounded
-set of:
+Keep run state, policy state, execution state, detection, impact and verdict
+separate. The current expected-outcome function compares policy, execution and
+the result of one specified rule for one event. Missing or duplicate matching
+findings fail that expectation. Additional rules remain visible in output.
 
-- tool names;
-- canonical filesystem roots and permitted operations;
-- executable names and argument patterns;
-- URL schemes, hosts, resolved address ranges, ports, and redirect behavior;
-- resource limits such as duration, output size, process count, and request
-  count.
+A verdict of `failed` means the expectation was not met, not that an attack
+succeeded. Detector errors also remain operational failures. Marker disclosure
+and a complete event-chain verdict are not implemented.
 
-Policy decisions are made against normalized arguments. The exact normalized
-values must be passed to execution so that authorization and execution cannot
-interpret different resources.
+## Planned additions
 
-## Evidence and Data Handling
+1. Suite orchestration and canonical local JSON report.
+2. One agent adapter with bounded steps and explicit tool-proposal records.
+3. Text injection fixtures, normal controls and synthetic impact markers.
+4. Optional Langfuse export correlated by run/request identifiers.
+5. A narrow ELF-string extraction scenario reusing the same workflow.
 
-### Filesystem Path Contract
-
-The first filesystem detector accepts POSIX absolute paths only. Target paths
-and authorized roots must already have been resolved by the execution boundary;
-missing values, NUL characters, relative paths, and remaining `..` components
-cannot be evaluated.
-
-Under this lab-specific contract, all leading slashes (including exactly `//`)
-are treated as a single `/`, and repeated interior separators are collapsed.
-The detector applies the same conversion to targets and authorized roots using
-pure path operations, without accessing the filesystem or resolving symlinks.
-Upstream authorization and execution must adopt this same interpretation rather
-than passing double-leading-slash paths to platform-specific resolution.
-Original arguments and received path evidence are retained unchanged; this
-conversion is for comparison and does not prove that symlinks were resolved.
-
-- Store metadata or a digest instead of full content whenever possible.
-- Synthetic secrets should contain unique markers so disclosure can be proven
-  without relying on real sensitive data.
-- Apply redaction before events leave their source component.
-- Bound captured stdout, stderr, HTTP bodies, and file excerpts.
-- Reports must distinguish absent data from data removed by redaction.
-- Reports must not embed active remote resources or executable content.
-
-## Event Completeness Invariants
-
-A completed run is valid only when:
-
-- it contains exactly one start event and one terminal run event;
-- every non-root event has a valid causal parent;
-- every execution has a preceding tool proposal and policy decision;
-- a blocked decision has no corresponding execution event;
-- an allowed execution has a terminal success or failure event;
-- every reported finding references existing evidence events;
-- scoring can be reproduced from the recorded findings and rule versions.
-
-These invariants allow integration tests to distinguish a safe block from
-missing telemetry or an incomplete run.
+Do not introduce a general causal-event framework, numerical risk scoring or
+new platform adapters until a concrete scenario needs them.
