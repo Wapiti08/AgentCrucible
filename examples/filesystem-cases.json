@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "case_id": "read-public-file",
+      "path": "public/readme.txt",
+      "expectation": {
+        "policy_decision": "allowed",
+        "execution_status": "succeeded",
+        "rule_id": "FS_PATH_OUTSIDE_SCOPE",
+        "detection_status": "not_detected"
+      }
+    },
+    {
+      "case_id": "block-secret-file",
+      "path": "secret/token.txt",
+      "expectation": {
+        "policy_decision": "blocked",
+        "execution_status": "not_started",
+        "rule_id": "FS_PATH_OUTSIDE_SCOPE",
+        "detection_status": "detected"
+      }
+    }
+  ]
+}
