@@ -95,9 +95,98 @@ aggregate expected-outcome test verdict.
 On batch failure, completed operation results are retained, but the normal
 audit/detection workflow is not run. Partial-run reconciliation is pending.
 
-## Planned suite input
+## Security suite CLI
 
-Runtime security cases will bind `FileReadCase` to `FileReadExpectation`.
-The models and comparison function exist; orchestration, file format and CLI
-integration are pending. Do not infer expected behavior from observed policy
-results. See [roadmap](roadmap.md) for release criteria.
+`attack_runner.run_suite` loads expected outcomes and runs the real Linux MCP
+workflow. Unlike `run_files`, it produces test verdicts. For complete fixture
+setup, see the [README](../README.md#quick-start).
+
+```sh
+uv run --locked python -m attack_runner.run_suite \
+  --case-file examples/filesystem-cases.json \
+  --workspace /fixtures \
+  --allowed-root public \
+  --max-read-bytes 65536 \
+  --report-file /reports/run-001.json
+```
+
+Create /fixtures/public/readme.txt and /fixtures/secret/token.txt with synthetic
+content, and create /reports beforehand. The report file must not exist.
+Keep reports outside the test workspace; the report writer does not enforce
+this placement.
+
+### Case-file contract
+
+The UTF-8 file is a single JSON object:
+
+```json
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "case_id": "block-secret-file",
+      "path": "secret/token.txt",
+      "expectation": {
+        "policy_decision": "blocked",
+        "execution_status": "not_started",
+        "rule_id": "FS_PATH_OUTSIDE_SCOPE",
+        "detection_status": "detected"
+      }
+    }
+  ]
+}
+```
+
+Version must be integer 1; cases must be nonempty with unique nonblank IDs.
+An empty path is a valid negative-test input. Unknown fields, duplicate JSON
+keys, nonstandard numeric constants and invalid status values are rejected.
+Validation finishes before MCP execution. Authorization configuration comes
+from CLI arguments, not case content.
+
+Policy values: allowed, blocked, not_evaluated, error.
+Execution values: succeeded, failed, not_started.
+Detection values: detected, not_detected, not_evaluated, error.
+
+The CLI currently registers only FS_PATH_OUTSIDE_SCOPE. A well-formed but
+unregistered expected rule ID yields a missing-result failed verdict; it is not
+currently rejected during input parsing.
+
+### Suite output and exit codes
+
+stdout contains `case.verdict` records followed by `suite.summary`.
+stderr prints run_id and audit_file metadata, plus errors and possible server
+diagnostics. The run ID is not yet embedded in server audit records.
+
+| Code | Meaning |
+| --- | --- |
+| 0 | All expectations met, with no detector errors |
+| 1 | At least one expectation unmet |
+| 2 | Invalid arguments, configuration or case file |
+| 3 | Audit setup, batch, audit validation, detector or report-save error |
+
+Detector errors take priority over ordinary failed expectations. A
+not_evaluated finding fails an expectation of detected, but can satisfy an
+explicit expectation of not_evaluated; neither establishes safety.
+
+### Saved report
+
+`--report-file` is optional. The JSON object contains schema_version (1),
+run_id, run_status, summary and cases. Each case retains its original request
+path, expected outcomes, actual policy/execution metadata, findings and verdict.
+
+The report excludes file content, Base64 content and internal resolved paths or
+authorized roots. It still contains requested paths and diagnostic reasons and
+is not an anonymized artifact. Full runtime configuration, timestamps and tool
+versions are not yet included.
+
+`run_status: "completed"` means suite orchestration returned; it does not mean
+the tests passed. Unmet expectations and detector errors still produce reports.
+Batch or audit exceptions produce an error and no completed report.
+
+Saving uses exclusive creation; existing files are not overwritten, parent
+directories are not created, and partial writes are not automatically removed.
+Saving is not atomic or crash-durable. A save error returns 3 even if the already
+printed summary says successful: that summary describes test outcomes, not
+report persistence. Check the process exit code as well as output.
+
+Reports do not yet cover interrupted runs or partial-result reconciliation.

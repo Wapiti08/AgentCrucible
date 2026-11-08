@@ -10,7 +10,7 @@ from .audit_match import AuditedFileRead, match_audit_records
 from .audit_reader import load_audit_records
 from .batch import run_file_batch
 from .cases import FileReadTestCase, validate_test_cases
-from .expectations import CaseVerdict, VerdictStatus, evaluate_file_read
+from .expectations import CaseVerdict, VerdictStatus, evaluate_file_read, FileReadExpectation
 
 
 @dataclass(frozen=True)
@@ -18,6 +18,7 @@ class FileReadTestResult:
     audited: AuditedFileRead
     findings: tuple[DetectionResult, ...]
     verdict: CaseVerdict
+    expectation: FileReadExpectation
 
 # statistical results
 @dataclass(frozen=True)
@@ -109,6 +110,7 @@ async def run_file_suite(
                 audited=audited,
                 findings=findings,
                 verdict=verdict,
+                expectation=expectation,
             )
         )
 

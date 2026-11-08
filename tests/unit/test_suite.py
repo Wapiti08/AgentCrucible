@@ -105,7 +105,9 @@ class SummaryTests(unittest.TestCase):
     def make_result(self, findings):
         item = audited()
         return FileReadTestResult(
-            item, findings, evaluate_file_read(item, findings, expectation()),
+            audited=item, findings=findings,
+            verdict=evaluate_file_read(item, findings, expectation()),
+            expectation=expectation(),
         )
 
     def test_empty_suite_is_not_successful(self):
@@ -163,6 +165,8 @@ class SuiteTests(unittest.IsolatedAsyncioTestCase):
         with patch("attack_runner.suite.run_file_batch", batch):
             results = await run_file_suite(cases, self.config, self.detector, audit_path=self.path)
         self.assertEqual([r.verdict.case_id for r in results], ["case-2", "case-1"])
+        self.assertIs(results[0].expectation, cases[1].expectation)
+        self.assertIs(results[1].expectation, cases[0].expectation)
         self.assertTrue(all(r.verdict.status is VerdictStatus.PASSED for r in results))
         batch.assert_awaited_once_with(tuple(c.case for c in cases), self.config,
                                       audit_path=self.path)

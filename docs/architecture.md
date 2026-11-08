@@ -3,8 +3,8 @@
 ## Scope
 
 The first release tests filesystem authorization for file-processing agents.
-The implemented foundation is a direct MCP read workflow; model-driven execution
-and aggregate test reports are still pending.
+The implemented foundation is a direct MCP read workflow; model-driven execution is still pending. The direct suite also supports
+expected-outcome comparison and a local aggregate JSON report.
 
 ## Implemented flow
 
@@ -35,7 +35,9 @@ records after the normal batch and session shutdown complete.
 | `audit_events.py` | Convert matched evidence without re-reading or resolving paths |
 | `expectations.py` | Compare policy, execution and one specified rule's status |
 | `cases.py` | Bind each input to its expectation and validate case IDs |
-| `suite.py` | Pending orchestration of execution, detection and verdicts |
+| `suite.py` | Orchestrate execution, detection, verdicts and summary |
+| `run_suite.py` | Case-file CLI, run ID, exit codes and optional report saving |
+| `reports/json_report.py` | Explicit report fields and exclusive file creation |
 | `FileService` | Bounded byte reads and result construction |
 | `LinuxFilePlatform` | Directory handles, openat2 constraints and authorization checks |
 | `Detector` | Dispatch rules and isolate rule errors; never authorize operations |
@@ -94,9 +96,9 @@ A verdict of `failed` means the expectation was not met, not that an attack
 succeeded. Detector errors also remain operational failures. Marker disclosure
 and a complete event-chain verdict are not implemented.
 
-## Planned additions
+## Next additions
 
-1. Suite orchestration and canonical local JSON report.
+1. Richer report provenance and interrupted-run reporting.
 2. One agent adapter with bounded steps and explicit tool-proposal records.
 3. Text injection fixtures, normal controls and synthetic impact markers.
 4. Optional Langfuse export correlated by run/request identifiers.
@@ -104,3 +106,19 @@ and a complete event-chain verdict are not implemented.
 
 Do not introduce a general causal-event framework, numerical risk scoring or
 new platform adapters until a concrete scenario needs them.
+
+## Agent integration package boundary
+
+The new `agents/` package is a scaffold, not an implemented agent integration.
+`models.py` will hold provider-independent actions and feedback; `base.py` will
+define the adapter contract; `adapters/` will contain concrete integrations.
+No model SDK or agent execution behavior is introduced by this structure.
+
+The runner will own the agent loop, MCP execution, step limits and evidence
+correlation. Agent adapters must not import suite expectations, verdicts or
+reports. Test expectations must not enter the tested agent's context.
+`apps/vulnerable_agent/` remains a location for a concrete runnable test app.
+
+Both CLI entry points import `create_audit_path` from
+`attack_runner/runtime_paths.py`; neither CLI needs to import the other.
+The helper retains its existing exclusive temporary-directory behavior.

@@ -12,9 +12,15 @@ dependencies = [
     "pydantic>=2,<3",
 ]
 
+[project.optional-dependencies]
+agents = [
+    "langchain-core>=1.7.6",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = [
+    "agents", "agents.*",
     "apps", "apps.*",
     "attack_runner", "attack_runner.*",
     "binary_analysis", "binary_analysis.*",

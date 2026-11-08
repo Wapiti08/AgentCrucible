@@ -11,8 +11,6 @@ how to run:
 
 """
 import asyncio
-import tempfile
-from pathlib import Path
 import json
 import sys
 import argparse
@@ -22,6 +20,7 @@ from detectors.rules.fs_path_traversal import FilePathOutsideScopeRule
 
 from .audit_events import build_file_access_event
 from mcp_servers.filesystem_server.models import FileServiceConfig
+from .runtime_paths import create_audit_path
 from .batch import (
     BatchAbortedError,
     FileReadCase,
@@ -103,25 +102,6 @@ def print_results(results: Sequence[FileReadCaseResult]) -> None:
         }
 
         print(json.dumps(record, ensure_ascii=True))
-
-
-def create_audit_path(config: FileServiceConfig) -> Path:
-    workspace = Path(config.workspace_root).resolve()
-    audit_parent = Path(tempfile.gettempdir()).resolve(strict=True)
-
-    if audit_parent.is_relative_to(workspace):
-        raise ValueError(
-            "The temporary audit directory would be inside the workspace."
-        )
-
-    audit_directory = Path(
-        tempfile.mkdtemp(
-            prefix="agentcrucible-audit-",
-            dir=audit_parent,
-        )
-    )
-
-    return audit_directory / "events.jsonl"
 
 
 def main(argv: Sequence[str] | None = None) -> int:

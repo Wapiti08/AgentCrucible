@@ -1,0 +1,22 @@
+FROM ghcr.io/astral-sh/uv:0.9.5-bookworm-slim
+
+WORKDIR /app
+
+ENV UV_PROJECT_ENVIRONMENT=/opt/demo-venv \
+    UV_PYTHON_INSTALL_DIR=/opt/uv-python \
+    PYTHONDONTWRITEBYTECODE=1
+
+COPY pyproject.toml uv.lock ./
+
+RUN uv sync --locked --no-install-project --python 3.12
+
+COPY agents/ ./agents/
+COPY attack_runner/ ./attack_runner/
+COPY detectors/ ./detectors/
+COPY mcp_servers/ ./mcp_servers/
+COPY reports/ ./reports/
+COPY examples/ ./examples/
+
+ENTRYPOINT ["uv", "run", "--no-sync", "python", "-B", "-m", "examples.run_filesystem_demo"]
+
+CMD ["--report-file", "/output/report.json"]

@@ -9,9 +9,15 @@ expected outcomes, rather than a general observability dashboard.
 No delivery dates are contractual. Complete each milestone's evidence and tests
 before expanding the supported attack surface.
 
-## M1 — Direct filesystem suite (current work)
+## M1 — Direct filesystem suite (baseline implemented)
 
-Deliver:
+The normal-read and out-of-scope baseline now runs through the suite CLI to a
+saved JSON report, with unit and real Linux integration coverage. Remaining
+work includes broader runtime boundary cases, report provenance and partial-run
+reporting; the latter are not claimed by the completed baseline.
+
+Baseline capabilities:
+
 - validated cases and expectations, with unique case IDs;
 - suite orchestration over existing MCP execution, audit matching and detection;
 - focused tests for verdicts, evidence failure and batch interruption;

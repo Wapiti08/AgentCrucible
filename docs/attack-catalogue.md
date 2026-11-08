@@ -1,8 +1,8 @@
 # Scenario Catalogue
 
 Only synthetic, authorized fixtures are used. This catalogue distinguishes
-existing building blocks from runnable suite cases: the suite and case-file
-format are not yet complete.
+existing backend tests from runtime suite cases. The version-1 case-file loader
+and suite CLI are implemented.
 
 ## Direct-tool baseline
 
@@ -17,8 +17,13 @@ format are not yet complete.
 | Empty allowlist | blocked, not_started | Missing target yields not_evaluated in current rule |
 | Empty or oversized regular file | Successful empty bytes or bounded truncated bytes | Truncation is not a read failure |
 
-Existing Linux and MCP integration tests cover backend behavior. Explicit
-runtime suite fixtures and per-case expectations remain to be assembled.
+Existing Linux and MCP integration tests cover backend behavior. The runtime example
+`examples/filesystem-cases.json` covers normal and direct out-of-scope reads.
+The six-case `examples/filesystem-boundary-cases.json` adds traversal, sibling-prefix
+and inside/outside symlink cases. `examples/run_filesystem_demo.py` creates the
+fixtures and runs that suite; see the [container demo](../README.md#try-the-container-demo).
+Empty-allowlist and read-size controls remain covered by implementation tests,
+not by this six-case runtime example.
 
 ## Evidence integrity controls
 

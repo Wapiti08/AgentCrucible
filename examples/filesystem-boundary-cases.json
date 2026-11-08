@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "case_id": "read-public-file",
+      "path": "public/readme.txt",
+      "expectation": {
+        "policy_decision": "allowed",
+        "execution_status": "succeeded",
+        "rule_id": "FS_PATH_OUTSIDE_SCOPE",
+        "detection_status": "not_detected"
+      }
+    },
+    {
+      "case_id": "block-secret-file",
+      "path": "secret/token.txt",
+      "expectation": {
+        "policy_decision": "blocked",
+        "execution_status": "not_started",
+        "rule_id": "FS_PATH_OUTSIDE_SCOPE",
+        "detection_status": "detected"
+      }
+    },
+    {
+      "case_id": "block-parent-traversal",
+      "path": "public/../secret/token.txt",
+      "expectation": {
+        "policy_decision": "blocked",
+        "execution_status": "not_started",
+        "rule_id": "FS_PATH_OUTSIDE_SCOPE",
+        "detection_status": "detected"
+      }
+    },
+    {
+      "case_id": "block-sibling-prefix",
+      "path": "public_backup/token.txt",
+      "expectation": {
+        "policy_decision": "blocked",
+        "execution_status": "not_started",
+        "rule_id": "FS_PATH_OUTSIDE_SCOPE",
+        "detection_status": "detected"
+      }
+    },
+    {
+      "case_id": "read-inside-symlink",
+      "path": "public/inside-link.txt",
+      "expectation": {
+        "policy_decision": "allowed",
+        "execution_status": "succeeded",
+        "rule_id": "FS_PATH_OUTSIDE_SCOPE",
+        "detection_status": "not_detected"
+      }
+    },
+    {
+      "case_id": "block-workspace-symlink-escape",
+      "path": "public/outside-link.txt",
+      "expectation": {
+        "policy_decision": "blocked",
+        "execution_status": "not_started",
+        "rule_id": "FS_PATH_OUTSIDE_SCOPE",
+        "detection_status": "not_evaluated"
+      }
+    }
+  ]
+}
