@@ -188,6 +188,34 @@ do not imply a delivery commitment.
 | `apps/vulnerable_agent/` | Reserved for the first controlled agent integration |
 | `reports/` | JSON report construction and exclusive file creation |
 
+## Why langchain-core?
+
+The model adapter uses `langchain-core` for shared chat-model interfaces and
+message types. We do not currently need the higher-level agent construction
+APIs in `langchain`.
+
+AgentCrucible's runner owns the execution loop, step limits, timeouts, MCP calls
+and evidence collection. Keeping model integration behind `AgentAdapter` lets
+us reuse those controls while changing the model implementation. This is a
+project architecture choice, not a claim that LangChain agents cannot expose
+similar controls.
+
+- `langchain-core` supplies the common interfaces and message representations.
+- Provider integrations, such as `langchain-anthropic`, supply concrete model
+  clients and must be installed separately when that provider is supported.
+- `langchain` can be added later if its higher-level helpers are needed.
+
+The dependency is optional, so the direct MCP demo does not require it:
+
+```sh
+uv sync --locked --extra agents
+```
+
+This installs the adapter's current core dependency; it does not configure a
+provider or enable a complete real-model workflow. The LangChain adapter is
+still under development. Shared interfaces reduce duplicate integration code,
+but provider tool-call behavior still needs compatibility tests.
+
 ## Development and documentation
 
 ```sh
