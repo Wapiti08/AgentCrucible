@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from attack_runner.case_loader import CaseLoadError, load_case_file
+from attack_runner.evaluation.case_loader import CaseLoadError, load_case_file
 from detectors.engine import DetectionStatus
 from mcp_servers.filesystem_server.models import PolicyDecision, ExecutionStatus
 

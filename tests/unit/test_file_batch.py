@@ -7,10 +7,9 @@ from hashlib import sha256
 import unittest
 from unittest.mock import AsyncMock, Mock, call, patch
 
-from attack_runner.batch import (
-    BatchAbortedError, FileReadCase, run_file_batch, validate_cases,
-)
-from attack_runner.mcp_models import FileReadResponse
+from attack_runner.file_cases import FileReadCase, validate_cases
+from attack_runner.execution.batch import BatchAbortedError, run_file_batch
+from attack_runner.transport.mcp_models import FileReadResponse
 from mcp_servers.filesystem_server.models import FileServiceConfig
 
 
@@ -73,8 +72,8 @@ class FileBatchTests(unittest.IsolatedAsyncioTestCase):
         self.connect = Mock(side_effect=connect)
         self.responses = [response("r1"), response("r2", True), response("r3")]
         self.read = AsyncMock(side_effect=self.responses)
-        self.enterContext(patch("attack_runner.batch.connect_filesystem_server", self.connect))
-        self.enterContext(patch("attack_runner.batch.read_file", self.read))
+        self.enterContext(patch("attack_runner.execution.batch.connect_filesystem_server", self.connect))
+        self.enterContext(patch("attack_runner.execution.batch.read_file", self.read))
 
     async def test_reuses_connection_and_preserves_order_after_block(self):
         results = await run_file_batch(self.cases, self.config, audit_path=self.audit_path)

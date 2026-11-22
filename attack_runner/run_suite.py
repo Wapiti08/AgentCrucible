@@ -17,11 +17,11 @@ import sys
 from detectors.engine import Detector
 from detectors.rules.fs_path_traversal import FilePathOutsideScopeRule
 
-from .audit_match import AuditMatchError
-from .audit_reader import AuditReadError
-from .batch import BatchAbortedError
+from attack_runner.evidence.audit_match import AuditMatchError
+from attack_runner.evidence.audit_reader import AuditReadError
+from attack_runner.execution.batch import BatchAbortedError
 from .runtime_paths import create_audit_path
-from .suite import (
+from attack_runner.execution.suite import (
     FileReadTestResult,
     SuiteSummary,
     run_file_suite,
@@ -30,8 +30,8 @@ from .suite import (
 
 from mcp_servers.filesystem_server.models import FileServiceConfig
 
-from .case_loader import CaseLoadError, load_case_file
-from .cases import FileReadTestCase
+from attack_runner.evaluation.case_loader import CaseLoadError, load_case_file
+from attack_runner.evaluation.cases import FileReadTestCase
 
 
 def parse_inputs(

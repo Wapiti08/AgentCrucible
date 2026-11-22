@@ -1,6 +1,6 @@
 """Generate machine-readable JSON security reports."""
 
-from attack_runner.suite import FileReadTestResult, summarize_suite
+from attack_runner.execution.suite import FileReadTestResult, summarize_suite
 from collections.abc import Sequence
 import json
 from pathlib import Path

@@ -5,12 +5,12 @@ from pathlib import Path
 from detectors.engine import DetectionResult, DetectionStatus, Detector
 from mcp_servers.filesystem_server.models import FileServiceConfig
 
-from .audit_events import build_file_access_event
-from .audit_match import AuditedFileRead, match_audit_records
-from .audit_reader import load_audit_records
-from .batch import run_file_batch
-from .cases import FileReadTestCase, validate_test_cases
-from .expectations import CaseVerdict, VerdictStatus, evaluate_file_read, FileReadExpectation
+from attack_runner.evidence.audit_events import build_file_access_event
+from attack_runner.evidence.audit_match import AuditedFileRead, match_audit_records
+from attack_runner.evidence.audit_reader import load_audit_records
+from attack_runner.execution.batch import run_file_batch
+from attack_runner.evaluation.cases import FileReadTestCase, validate_test_cases
+from attack_runner.evaluation.expectations import CaseVerdict, VerdictStatus, evaluate_file_read, FileReadExpectation
 
 
 @dataclass(frozen=True)

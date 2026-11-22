@@ -180,7 +180,11 @@ do not imply a delivery commitment.
 | Path | Role |
 | --- | --- |
 | `agents/` | Package scaffold for agent contracts and adapters; implementation pending |
-| `attack_runner/` | MCP batch execution, audit matching, event conversion, expectations and suite orchestration |
+| `attack_runner/` | Stable CLI entry points and shared file-read case contracts |
+| `attack_runner/transport/` | MCP client lifecycle and response validation |
+| `attack_runner/evidence/` | Audit reading, request matching and detection-event conversion |
+| `attack_runner/evaluation/` | Test-case loading, expectations and verdicts |
+| `attack_runner/execution/` | Batch/suite orchestration, agent loop and tool execution |
 | `mcp_servers/filesystem_server/` | File service, Linux enforcement, MCP transport and audit producer |
 | `detectors/` | Evidence-based detection contracts and filesystem scope rule |
 | `tests/` | Tests of the implementation; separate from runtime security cases |

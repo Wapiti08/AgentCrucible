@@ -15,9 +15,10 @@ import tempfile
 import unittest
 from uuid import UUID
 
-from attack_runner.mcp_client import connect_filesystem_server, read_file
-from attack_runner.batch import FileReadCase, run_file_batch
-from attack_runner.mcp_models import FileReadResponse
+from attack_runner.transport.mcp_client import connect_filesystem_server, read_file
+from attack_runner.file_cases import FileReadCase
+from attack_runner.execution.batch import run_file_batch
+from attack_runner.transport.mcp_models import FileReadResponse
 from mcp_servers.filesystem_server.models import FileServiceConfig
 
 

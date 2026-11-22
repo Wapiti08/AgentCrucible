@@ -8,8 +8,9 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from attack_runner.batch import BatchAbortedError, FileReadCase, FileReadCaseResult
-from attack_runner.mcp_models import FileReadResponse
+from attack_runner.file_cases import FileReadCase, FileReadCaseResult
+from attack_runner.execution.batch import BatchAbortedError
+from attack_runner.transport.mcp_models import FileReadResponse
 from attack_runner.run_files import main, parse_inputs
 
 

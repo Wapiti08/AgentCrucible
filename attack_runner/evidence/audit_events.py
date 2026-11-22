@@ -1,6 +1,6 @@
 from detectors.engine import FileAccessData, SecurityEvent
 
-from .audit_match import AuditedFileRead
+from attack_runner.evidence.audit_match import AuditedFileRead
 
 
 def build_file_access_event(

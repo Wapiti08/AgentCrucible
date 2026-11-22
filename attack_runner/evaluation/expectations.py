@@ -5,7 +5,7 @@ from mcp_servers.filesystem_server.models import (
     ExecutionStatus,
     PolicyDecision,
 )
-from .audit_match import AuditedFileRead
+from attack_runner.evidence.audit_match import AuditedFileRead
 
 
 class VerdictStatus(str, Enum):

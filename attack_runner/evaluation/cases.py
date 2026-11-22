@@ -1,7 +1,7 @@
 from dataclasses import dataclass
-from .expectations import FileReadExpectation
+from attack_runner.evaluation.expectations import FileReadExpectation
 from collections.abc import Sequence
-from .batch import FileReadCase, validate_cases
+from attack_runner.file_cases import FileReadCase, validate_cases
 
 
 @dataclass(frozen=True)

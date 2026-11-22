@@ -5,7 +5,7 @@ from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from .mcp_models import FileReadResponse
+from attack_runner.transport.mcp_models import FileReadResponse
 from mcp_servers.filesystem_server.models import FileServiceConfig
 
 '''
@@ -28,7 +28,7 @@ async def connect_filesystem_server(
     if not audit_path.is_absolute():
         raise ValueError("audit_path must be absolute.")
 
-    project_root = Path(__file__).resolve().parents[1]
+    project_root = Path(__file__).resolve().parents[2]
 
     # cmd sent to python subprocess
     args = [

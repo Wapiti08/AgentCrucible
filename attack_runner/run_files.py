@@ -18,18 +18,13 @@ from collections.abc import Sequence
 from detectors.engine import Detector, DetectionStatus
 from detectors.rules.fs_path_traversal import FilePathOutsideScopeRule
 
-from .audit_events import build_file_access_event
+from attack_runner.evidence.audit_events import build_file_access_event
 from mcp_servers.filesystem_server.models import FileServiceConfig
 from .runtime_paths import create_audit_path
-from .batch import (
-    BatchAbortedError,
-    FileReadCase,
-    FileReadCaseResult,
-    run_file_batch,
-    validate_cases,
-)
-from .audit_reader import AuditReadError, load_audit_records
-from .audit_match import AuditMatchError, match_audit_records
+from attack_runner.file_cases import FileReadCase, FileReadCaseResult, validate_cases
+from attack_runner.execution.batch import BatchAbortedError, run_file_batch
+from attack_runner.evidence.audit_reader import AuditReadError, load_audit_records
+from attack_runner.evidence.audit_match import AuditMatchError, match_audit_records
 
 
 def parse_inputs(

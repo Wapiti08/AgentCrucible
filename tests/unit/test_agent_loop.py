@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 from agents.base import AgentAdapter
 from agents.models import AgentFinalAnswer, ReadFileCall, ReadFileFeedback
-from attack_runner.agent_loop import AgentLoopConfig, AgentLoopAbortedError, run_agent_loop
+from attack_runner.execution.agent_loop import AgentLoopConfig, AgentLoopAbortedError, run_agent_loop
 
 
 class ScriptedAgent(AgentAdapter):
@@ -139,7 +139,7 @@ class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(contexts), 1)
             self.assertEqual(contexts[0].when(), agent.assertion)
             return feedback()
-        with patch("attack_runner.agent_loop.asyncio.timeout", side_effect=track):
+        with patch("attack_runner.execution.agent_loop.asyncio.timeout", side_effect=track):
             with self.assertRaises(AgentLoopAbortedError) as caught:
                 await run_agent_loop(agent, "task", execute, AgentLoopConfig(max_steps=1))
         self.assertEqual(caught.exception.reason, "step_limit")

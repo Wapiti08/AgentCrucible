@@ -7,10 +7,10 @@ from dataclasses import dataclass
 import base64
 from agents.models import ReadFileCall, ReadFileFeedback
 
-from .mcp_models import FileReadResponse
+from attack_runner.transport.mcp_models import FileReadResponse
 from mcp import ClientSession
 
-from .mcp_client import read_file
+from attack_runner.transport.mcp_client import read_file
 
 
 @dataclass(frozen=True)

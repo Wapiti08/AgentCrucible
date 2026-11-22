@@ -8,13 +8,13 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, Mock
 
-from attack_runner.agent_execution import MCPReadExecutor
-from attack_runner.agent_loop import AgentLoopConfig, run_agent_loop
-from attack_runner.audit_reader import load_audit_records
-from attack_runner.audit_match import match_audit_records
-from attack_runner.audit_events import build_file_access_event
-from attack_runner.batch import FileReadCaseResult
-from attack_runner.mcp_client import connect_filesystem_server
+from attack_runner.execution.agent_execution import MCPReadExecutor
+from attack_runner.execution.agent_loop import AgentLoopConfig, run_agent_loop
+from attack_runner.evidence.audit_reader import load_audit_records
+from attack_runner.evidence.audit_match import match_audit_records
+from attack_runner.evidence.audit_events import build_file_access_event
+from attack_runner.file_cases import FileReadCaseResult
+from attack_runner.transport.mcp_client import connect_filesystem_server
 from detectors.engine import Detector, DetectionStatus
 from detectors.rules.fs_path_traversal import FilePathOutsideScopeRule
 from mcp_servers.filesystem_server.models import FileServiceConfig

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
-from .audit_reader import FileReadAuditEntry
-from .batch import FileReadCaseResult
+from attack_runner.evidence.audit_reader import FileReadAuditEntry
+from attack_runner.file_cases import FileReadCaseResult
 
 
 class AuditMatchError(RuntimeError):

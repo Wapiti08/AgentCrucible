@@ -4,10 +4,10 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from attack_runner.audit_reader import AuditReadError, FileReadAuditEntry, load_audit_records
-from attack_runner.audit_match import AuditMatchError, match_audit_records
-from attack_runner.batch import FileReadCaseResult
-from attack_runner.mcp_models import FileReadResponse
+from attack_runner.evidence.audit_reader import AuditReadError, FileReadAuditEntry, load_audit_records
+from attack_runner.evidence.audit_match import AuditMatchError, match_audit_records
+from attack_runner.file_cases import FileReadCaseResult
+from attack_runner.transport.mcp_models import FileReadResponse
 
 
 def entry(request_id="r1", **changes):

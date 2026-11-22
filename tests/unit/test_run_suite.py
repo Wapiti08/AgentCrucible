@@ -6,10 +6,10 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from attack_runner.run_suite import main
-from attack_runner.audit_reader import AuditReadError
-from attack_runner.audit_match import AuditMatchError
-from attack_runner.batch import BatchAbortedError
-from attack_runner.suite import SuiteSummary
+from attack_runner.evidence.audit_reader import AuditReadError
+from attack_runner.evidence.audit_match import AuditMatchError
+from attack_runner.execution.batch import BatchAbortedError
+from attack_runner.execution.suite import SuiteSummary
 
 
 class RunSuiteTests(unittest.TestCase):

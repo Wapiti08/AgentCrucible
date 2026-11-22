@@ -109,12 +109,12 @@ new platform adapters until a concrete scenario needs them.
 
 ## Agent integration package boundary
 
-The new `agents/` package is a scaffold, not an implemented agent integration.
-`models.py` will hold provider-independent actions and feedback; `base.py` will
-define the adapter contract; `adapters/` will contain concrete integrations.
-No model SDK or agent execution behavior is introduced by this structure.
+The `agents/` package defines provider-independent actions and feedback in
+`models.py`, the adapter contract in `base.py`, and model integrations in
+`adapters/`. The LangChain adapter has offline and Linux MCP integration
+coverage using a fake model; real-provider execution is not yet validated.
 
-The runner will own the agent loop, MCP execution, step limits and evidence
+The runner owns the agent loop, MCP execution, step limits and evidence
 correlation. Agent adapters must not import suite expectations, verdicts or
 reports. Test expectations must not enter the tested agent's context.
 `apps/vulnerable_agent/` remains a location for a concrete runnable test app.
@@ -122,3 +122,27 @@ reports. Test expectations must not enter the tested agent's context.
 Both CLI entry points import `create_audit_path` from
 `attack_runner/runtime_paths.py`; neither CLI needs to import the other.
 The helper retains its existing exclusive temporary-directory behavior.
+
+
+## Runner module layout
+
+The root-level `runner.py`, `run_files.py` and `run_suite.py` retain their
+existing module CLI names. `run_agent.py` is reserved for the new agent entry
+point. CLI modules assemble components; implementation modules do not import
+CLI entry points.
+
+- `transport/`: MCP session lifecycle and validated wire responses.
+- `evidence/`: audit parsing, request/result matching and detection events.
+- `evaluation/`: test-case loading, expected outcomes and verdict evaluation.
+- `execution/`: batch and suite orchestration, agent loop and MCP executor.
+- `file_cases.py`: shared `FileReadCase`, `FileReadCaseResult` and case validation.
+- `runtime_paths.py`: shared audit-directory creation.
+
+Evidence and evaluation import shared case contracts from `file_cases.py`,
+not from the batch executor. The contracts depend only on the transport
+response model; transport does not import orchestration. Suite orchestration
+combines execution, evidence, detectors and evaluation. Agent adapters remain
+independent of test expectations.
+
+Internal Python import paths moved to these subpackages; old flat module paths
+are not retained as aliases. Existing documented CLI commands are unchanged.

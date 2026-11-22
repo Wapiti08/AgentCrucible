@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, patch
 
 from agents.base import AgentAdapter
 from agents.models import AgentFinalAnswer, ReadFileCall, ReadFileFeedback
-from attack_runner.agent_execution import AgentFileReadRecord, MCPReadExecutor, build_read_feedback
-from attack_runner.agent_loop import AgentLoopConfig, run_agent_loop
-from attack_runner.mcp_models import FileReadResponse
+from attack_runner.execution.agent_execution import AgentFileReadRecord, MCPReadExecutor, build_read_feedback
+from attack_runner.execution.agent_loop import AgentLoopConfig, run_agent_loop
+from attack_runner.transport.mcp_models import FileReadResponse
 
 
 def response(content=b"", *, truncated=False, request_id="r1"):
@@ -69,7 +69,7 @@ class ExecutorTests(unittest.IsolatedAsyncioTestCase):
         session = object()
         executor = MCPReadExecutor(session, max_read_bytes=32)
         raw = response(b"hello")
-        with patch("attack_runner.agent_execution.read_file", AsyncMock(return_value=raw)) as read:
+        with patch("attack_runner.execution.agent_execution.read_file", AsyncMock(return_value=raw)) as read:
             call = ReadFileCall("c1", "public/a")
             feedback = await executor(call)
             read.assert_awaited_once_with(session, "public/a", max_read_bytes=32)
@@ -84,7 +84,7 @@ class ExecutorTests(unittest.IsolatedAsyncioTestCase):
     async def test_decode_failure_is_recorded(self):
         executor = MCPReadExecutor(object(), max_read_bytes=32)
         raw = response(b"\xff")
-        with patch("attack_runner.agent_execution.read_file", AsyncMock(return_value=raw)):
+        with patch("attack_runner.execution.agent_execution.read_file", AsyncMock(return_value=raw)):
             feedback = await executor(ReadFileCall("c1", "a"))
         self.assertFalse(feedback.succeeded)
         self.assertIs(executor.records[0].response, raw)
@@ -92,14 +92,14 @@ class ExecutorTests(unittest.IsolatedAsyncioTestCase):
     async def test_error_and_cancellation_do_not_fabricate_records(self):
         for error in (RuntimeError("MCP error"), asyncio.CancelledError()):
             executor = MCPReadExecutor(object(), max_read_bytes=32)
-            with patch("attack_runner.agent_execution.read_file", AsyncMock(side_effect=error)):
+            with patch("attack_runner.execution.agent_execution.read_file", AsyncMock(side_effect=error)):
                 with self.assertRaises(type(error)):
                     await executor(ReadFileCall("c1", "a"))
             self.assertEqual(executor.records, ())
 
     async def test_invalid_call_does_not_contact_mcp(self):
         executor = MCPReadExecutor(object(), max_read_bytes=32)
-        with patch("attack_runner.agent_execution.read_file", AsyncMock()) as read:
+        with patch("attack_runner.execution.agent_execution.read_file", AsyncMock()) as read:
             with self.assertRaises(TypeError):
                 await executor("a")
             read.assert_not_awaited()
@@ -111,7 +111,7 @@ class ExecutorTests(unittest.IsolatedAsyncioTestCase):
                     return ReadFileCall("c1", "public/a")
                 return AgentFinalAnswer(history[-1].text)
         executor = MCPReadExecutor(object(), max_read_bytes=32)
-        with patch("attack_runner.agent_execution.read_file", AsyncMock(return_value=response(b"hello"))):
+        with patch("attack_runner.execution.agent_execution.read_file", AsyncMock(return_value=response(b"hello"))):
             result = await run_agent_loop(Agent(), "read", executor, AgentLoopConfig())
         self.assertEqual(result.final_answer.text, "hello")
         self.assertEqual(result.steps, 2)

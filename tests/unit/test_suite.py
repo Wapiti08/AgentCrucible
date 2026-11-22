@@ -6,14 +6,15 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
-from attack_runner.audit_events import build_file_access_event
-from attack_runner.audit_match import AuditMatchError, AuditedFileRead
-from attack_runner.audit_reader import AuditReadError, FileReadAuditEntry
-from attack_runner.batch import BatchAbortedError, FileReadCase, FileReadCaseResult
-from attack_runner.cases import FileReadTestCase, validate_test_cases
-from attack_runner.expectations import FileReadExpectation, VerdictStatus, evaluate_file_read
-from attack_runner.mcp_models import FileReadResponse
-from attack_runner.suite import FileReadTestResult, run_file_suite, summarize_suite
+from attack_runner.evidence.audit_events import build_file_access_event
+from attack_runner.evidence.audit_match import AuditMatchError, AuditedFileRead
+from attack_runner.evidence.audit_reader import AuditReadError, FileReadAuditEntry
+from attack_runner.file_cases import FileReadCase, FileReadCaseResult
+from attack_runner.execution.batch import BatchAbortedError
+from attack_runner.evaluation.cases import FileReadTestCase, validate_test_cases
+from attack_runner.evaluation.expectations import FileReadExpectation, VerdictStatus, evaluate_file_read
+from attack_runner.transport.mcp_models import FileReadResponse
+from attack_runner.execution.suite import FileReadTestResult, run_file_suite, summarize_suite
 from detectors.engine import DetectionResult, DetectionStatus, Detector
 from detectors.rules.fs_path_traversal import FilePathOutsideScopeRule
 from mcp_servers.filesystem_server.models import ExecutionStatus, FileServiceConfig, PolicyDecision
@@ -162,7 +163,7 @@ class SuiteTests(unittest.IsolatedAsyncioTestCase):
                                    expectation=expectation(DetectionStatus.NOT_EVALUATED)))
         self.write_records((self.item, second))
         batch = AsyncMock(return_value=(second.result, self.item.result))
-        with patch("attack_runner.suite.run_file_batch", batch):
+        with patch("attack_runner.execution.suite.run_file_batch", batch):
             results = await run_file_suite(cases, self.config, self.detector, audit_path=self.path)
         self.assertEqual([r.verdict.case_id for r in results], ["case-2", "case-1"])
         self.assertIs(results[0].expectation, cases[1].expectation)
@@ -172,7 +173,7 @@ class SuiteTests(unittest.IsolatedAsyncioTestCase):
                                       audit_path=self.path)
 
     async def test_invalid_cases_prevent_execution(self):
-        with patch("attack_runner.suite.run_file_batch", new_callable=AsyncMock) as batch:
+        with patch("attack_runner.execution.suite.run_file_batch", new_callable=AsyncMock) as batch:
             with self.assertRaises(ValueError):
                 await run_file_suite((self.case, self.case), self.config, self.detector,
                                      audit_path=self.path)
@@ -181,8 +182,8 @@ class SuiteTests(unittest.IsolatedAsyncioTestCase):
     async def test_batch_failure_preserves_exception_and_completed_results(self):
         error = BatchAbortedError(phase="call", failed_case=self.case.case,
                                  completed_results=(self.item.result,))
-        with patch("attack_runner.suite.run_file_batch", AsyncMock(side_effect=error)), patch(
-                "attack_runner.suite.load_audit_records") as reader:
+        with patch("attack_runner.execution.suite.run_file_batch", AsyncMock(side_effect=error)), patch(
+                "attack_runner.execution.suite.load_audit_records") as reader:
             with self.assertRaises(BatchAbortedError) as caught:
                 await run_file_suite((self.case,), self.config, self.detector, audit_path=self.path)
             self.assertIs(caught.exception, error)
@@ -193,7 +194,7 @@ class SuiteTests(unittest.IsolatedAsyncioTestCase):
             self.path.write_text(content, encoding="utf-8")
             detector = Mock(spec=Detector)
             with self.subTest(content=content), patch(
-                    "attack_runner.suite.run_file_batch", AsyncMock(return_value=(self.item.result,))):
+                    "attack_runner.execution.suite.run_file_batch", AsyncMock(return_value=(self.item.result,))):
                 with self.assertRaises(error):
                     await run_file_suite((self.case,), self.config, detector, audit_path=self.path)
                 detector.detect.assert_not_called()
@@ -203,7 +204,7 @@ class SuiteTests(unittest.IsolatedAsyncioTestCase):
             def evaluate(self, event):
                 raise RuntimeError("synthetic failure")
         self.write_records((self.item,))
-        with patch("attack_runner.suite.run_file_batch", AsyncMock(return_value=(self.item.result,))):
+        with patch("attack_runner.execution.suite.run_file_batch", AsyncMock(return_value=(self.item.result,))):
             results = await run_file_suite((self.case,), self.config, Detector((BrokenRule(),)),
                                            audit_path=self.path)
         self.assertEqual(results[0].findings[0].status, DetectionStatus.ERROR)

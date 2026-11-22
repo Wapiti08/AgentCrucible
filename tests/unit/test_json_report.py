@@ -8,8 +8,8 @@ from io import StringIO
 from unittest.mock import AsyncMock, patch
 
 from test_suite import audited, expectation, finding
-from attack_runner.expectations import evaluate_file_read
-from attack_runner.suite import FileReadTestResult
+from attack_runner.evaluation.expectations import evaluate_file_read
+from attack_runner.execution.suite import FileReadTestResult
 from attack_runner.run_suite import main
 from detectors.engine import DetectionStatus
 from reports.json_report import build_suite_report, write_suite_report, ReportWriteError

@@ -9,9 +9,9 @@ from mcp_servers.filesystem_server.models import (
     PolicyDecision,
 )
 
-from .batch import FileReadCase
-from .cases import FileReadTestCase, validate_test_cases
-from .expectations import FileReadExpectation
+from attack_runner.file_cases import FileReadCase
+from attack_runner.evaluation.cases import FileReadTestCase, validate_test_cases
+from attack_runner.evaluation.expectations import FileReadExpectation
 
 class CaseLoadError(RuntimeError):
     """Raised when a case file cannot be loaded reliably."""
